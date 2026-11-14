@@ -81,3 +81,23 @@ JSON은 메타데이터와 등록 handler만 지정합니다. shell/eval DSL은 
 `python3 tests/e2e/runner.py --category ui-discovery --contract v2 --profile local --handoff .dev/tester-ui-handoff.json --previous-run <기존-run-id>`로 연결 전 5목적 안내, 실제 본인 grant 경로, 허용된 카탈로그/상세, 실제 목록의 관리 대상 선택→preview/취소/명시 실행→변경 반영, 권한·계정 격리, 390×844 모바일/키보드를 검증합니다. 기존 `E2E_PLAYWRIGHT_MODULE` 환경변수도 필요합니다. 모바일 스크린샷은 토큰 입력이 빈 상태에서만 저장합니다.
 
 실제 사용 화면은 `--id UI-GRAPH,UI-MANAGE,V2-LOG-SECRETS`로 새 실행에 기록할 수 있습니다. `final-guide-and-self-access.png`는 Alice의 실제 조회와 활용 안내, `final-grant-paths.png`는 서버 응답과 정확히 일치하는 6개 경로, `final-explicit-management-success.png`는 admin이 Carol에게 분석가 역할을 명시 실행한 성공 화면입니다. 토큰 입력값이 비었음을 확인하고 연결 설정을 제외한 실제 결과 DOM 영역만 Playwright로 촬영합니다. 캡처 뒤 같은 관리 시나리오가 추가한 관계를 해제하며, 해당 실행의 보고서와 함께 이미지를 확인해야 합니다. 실제 runtime 재기동은 MANAGER의 TEST_READY와 TESTER 독점 소유권을 전제로 합니다.
+
+## Env launcher 독립 검증
+
+`BE/`에서 `PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/test_env_launcher.py`를 실행하면 독립 public CLI 계약을 검사합니다. 임시 복제 디렉터리의 가짜 Java는 인수·환경값의 SHA-256만 기록합니다. 실제 JVM·포트·Docker는 사용하지 않으며 이 결과를 MySQL/E2E 통과로 취급하지 않습니다. 문법, 무실행 literal, 파일 전체와 선택 shell의 placeholder 거부, 우선순위/빈 값, 경로 기준, 서버별 최소 환경, packaged config 고정과 잘못된 입력의 실행 전 거부를 검증합니다. 제품 launcher 단위검사와 별개의 테스트입니다.
+
+실제 실행은 MANAGER TEST_READY 이후에만 다음 명령으로 수행합니다. `--authorization`에는 해당 인계 메시지 ID, `--handoff`에는 승인된 launcher/API/MCP 파일의 SHA-256 맵을 넣습니다. 경로와 옵션 외 자격증명 값을 명령행에 넣지 않습니다.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/launcher_runtime.py \
+  --handoff /tmp/my-mcp-env-launcher-handoff.json \
+  --authorization <TEST_READY-message-id> \
+  --compose-env .dev/tester-v2.env \
+  --previous-run <previous-run-id>
+```
+
+검증은 기존 healthy `mcp-access-e2e-v2`/`access_e2e_v2`/3308/`mcp-access-e2e-v2_access-data`만 관측합니다. container를 자동 생성·재초기화·삭제하지 않으며 기존 `.env.e2e`의 정확 5키 계약을 유지합니다. 임시 `BE/.dev/launcher-runtime-*/`에 byte-identical launcher/JAR와 새 독립 keys/fixtures를 생성하고, 원본 env/기존 자격증명 해시를 보존 확인합니다. 임시 cwd의 hostile properties/YAML/config 파일이 무시되는지 실제 loopback listener, API PID의 3308 DB socket, 새 Performance Schema 접속의 DB/사용자, 로그파일·sentinel 부재로 검증합니다.
+
+실제 launcher 두 JVM의 MCP 초기화→12 Tools→Alice/Bob/Carol 권한 결과와 직접 API 일치, 인증거부, API 종료 후 MCP의 안전한 upstream 오류, 잘못된 DB의 startup 실패, SIGINT 종료·원본 불변·DB history/count 보존·argv/log 비밀 부재를 검사합니다. 실CLI 음성검사의 Java 관측 wrapper는 호출되면 실제 Java를 실행하며, placeholder/누락/잘못된 입력이 그 지점에 도달하지 않았음을 확인합니다. 사용자 volume은 보존하고 본 테스트가 시작한 process group만 정리합니다.
+
+각 실행은 `BE/test-results/launcher-cli-*` 또는 `launcher-runtime-*` 아래 새 `report.json`과 `summary.md`를 남깁니다. 실패·미실행은 통과와 분리하며, 재실행은 `--previous-run`으로 연결합니다. 기존 core38/UI9 결과는 launcher 검증 근거가 아닙니다. 실제 사용 Python 버전을 기록하며 설치하지 않은 최소 버전의 실행을 주장하지 않습니다.

@@ -1,70 +1,130 @@
 # 사용자 권한 조회·관리를 제공하는 Spring AI MCP 데모
 
 **`cd BE && ./gradlew verify`** 로 실제 MCP·API·JWT 통합 검증을 실행합니다.
-Java 21, Python 3, 첫 빌드의 의존성 다운로드가 필요합니다. MySQL 실행에는 Docker Compose가 필요합니다.
+Java 21, Python 3.9 이상, 첫 빌드의 의존성 다운로드가 필요합니다. MySQL 실행에는 Docker Compose가 필요합니다.
 FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실행 명령은 `BE/` 기준입니다.
 
 ## 실행
 
-1. 백엔드 빌드와 개발용 자격 증명을 준비합니다.
+1. `BE/`에서 빌드하고 env 예시를 **없는 파일에만** 복사합니다.
 
    ```sh
    cd BE
    ./gradlew build
-   java tools/DemoCredentials.java .dev/demo --fixtures
+   python3 - <<'PYENV'
+   import os
+   from pathlib import Path
+   for name in ('.env', '.env.api', '.env.mcp'):
+       try:
+           fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+       except FileExistsError:
+           print(name + ': 기존 파일 유지')
+           continue
+       with os.fdopen(fd, 'w') as output:
+           output.write(Path(name + '.example').read_text())
+       print(name + ': 예시 생성, 편집 필요')
+   PYENV
    ```
 
-   새 디렉터리에만 생성합니다. MCP 사용자 토큰은 60분 수명이며 `mcp-alice.jwt`, `mcp-bob.jwt`, `mcp-carol.jwt`, `mcp-local-id-demo.jwt`, `mcp-admin.jwt`입니다.
-   만료 후 새 디렉터리에 생성하고 두 앱의 `DEMO_DIR`를 그 절대 경로로 지정해 재시작합니다.
-   두 앱 모두 `DEMO_DIR` 기본값은 실행 디렉터리 기준 `.dev/demo`입니다. 다른 디렉터리를 쓸 때는 API와 MCP를 시작하는 **각 터미널에서 같은 절대 경로**를 설정하세요.
+   `.env`는 Compose 전용입니다. 전용 DB와 root가 아닌 사용자를 정하고 로컬 비밀번호를 편집합니다.
+   `.env.api`의 `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `DB_PORT`를 `.env`의 네 값과 맞춥니다.
+   root 비밀번호는 `.env`에만 둡니다. `.env.mcp`에는 DB 설정을 넣지 않습니다. `replace-with-...` 값은 런처가 거부합니다.
+   Compose의 `--env-file`은 호스트 Java 프로세스에 환경변수를 주입하지 않으므로 서버별 파일을 별도로 읽습니다.
+
+2. 서버 env에서 **기존 개발용 키 파일 경로**를 지정합니다.
+
+   API의 `DEMO_PUBLIC_KEY`는 `delegation-public.pem`, MCP의 `DEMO_PUBLIC_KEY`는 `issuer-public.pem`입니다.
+   MCP에만 `DELEGATION_PRIVATE_KEY=.../delegation-private.pem`, `DELEGATION_PUBLIC_KEY=.../delegation-public.pem`을 지정합니다.
+   예시는 `.dev/demo/`를 가리킵니다. 처음 실행하며 이 디렉터리가 없을 때만 개발용 키·토큰을 생성하세요.
 
    ```sh
-   export DEMO_DIR=/absolute/path/to/my-mcp-server/BE/.dev/new-demo
+   java tools/DemoCredentials.java .dev/demo
    ```
 
-   생성기는 macOS/Linux 개발 전용이며 디렉터리 `700`, 파일 `600`을 사용합니다. 실제 계정의 자격 증명을 읽지 않습니다.
+   생성기는 기존 디렉터리에 덮어쓰지 않습니다. 실제 계정 자격 증명을 읽지 않으며 디렉터리 `700`, 파일 `600`으로 생성합니다.
+   `mcp-alice.jwt`, `mcp-bob.jwt`, `mcp-carol.jwt`, `mcp-local-id-demo.jwt`, `mcp-admin.jwt`는 60분 수명입니다.
+   만료 후 새 디렉터리에 생성했다면 두 서버 env의 키 경로를 새 파일로 함께 바꾸고 재시작하세요. 런처 자체는 env·키·토큰을 생성하거나 갱신하지 않습니다.
 
-2. MySQL을 시작합니다. `.env`의 예시 비밀번호를 로컬 전용 값으로 바꾸세요.
+3. Compose로 MySQL을 시작하고 터미널 A에서 API를 실행합니다.
 
    ```sh
-   cp .env.example .env
-   # .env 편집: MYSQL_USER는 root가 아닌 전용 계정
    docker compose --env-file .env config --quiet
    docker compose --env-file .env up --build --wait access-db
-   docker compose ps
+   docker compose --env-file .env ps
+   python3 scripts/run_server.py api
    ```
 
-   공식 MySQL `8.4.13` 기반 Dockerfile을 빌드합니다. 포트는 `127.0.0.1:3307`, Compose 프로젝트는 `mcp-access-demo`입니다.
-   데이터는 전용 named volume `mcp-access-demo_access-data`에 유지됩니다. 비밀번호는 이미지/소스에 넣지 않습니다.
+   공식 MySQL `8.4.13`, 기본 포트 `127.0.0.1:3307`, 프로젝트 `mcp-access-demo`, 보존 volume `mcp-access-demo_access-data`를 사용합니다.
+   API는 기본 `127.0.0.1:8081`, 고정 `local` 프로필이며 실제 JDBC/MySQL과 Flyway schema·local seed를 사용합니다.
+   DB 연결·인증·마이그레이션 실패 시 기동 실패하며 인메모리로 우회하지 않습니다.
 
-3. 터미널 A에서 `.env`와 같은 `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `DB_PORT`를 환경변수로 설정하고 API를 시작합니다.
+4. 터미널 B의 `BE/`에서 MCP를 시작하고 UI를 엽니다.
 
    ```sh
-   java -jar api-server/build/libs/api-server-0.1.0.jar --spring.profiles.active=local
+   python3 scripts/run_server.py mcp
+   # 다른 env 파일을 사용할 때:
+   # python3 scripts/run_server.py mcp --env-file configs/mcp.env
    ```
 
-   API는 `127.0.0.1:8081`입니다. `local` 프로필은 실제 JDBC/MySQL을 사용하고 Flyway가 스키마와 개발 seed를 적용합니다.
-   DB 연결/마이그레이션 실패 시 기동 실패하며 인메모리로 우회하지 않습니다. `local,fixture` 동시 활성화도 기동 거부합니다.
-   Docker 없이 인증·Tool 데모만 실행할 때는 **명시적으로** `--spring.profiles.active=fixture`를 사용하세요. 이 경우 MySQL 검증은 아닙니다.
-
-4. 터미널 B에서 MCP를 시작합니다.
-
-   ```sh
-   java -jar mcp-server/build/libs/mcp-server-0.1.0.jar
-   ```
-
-   **http://127.0.0.1:8080/chat.html** 을 열고 사용자용 `mcp-alice.jwt` 내용을 입력합니다.
-   연결 전 활용 안내에서 목적을 고르고, 연결 후 실제 본인 권한 경로와 조회 가능한 카탈로그를 확인할 수 있습니다. 목록에서 관리 대상을 골라도 미리보기와 명시적 실행을 거쳐야 변경됩니다.
+   **http://127.0.0.1:8080/chat.html** 에 사용자용 `mcp-alice.jwt` 내용을 입력합니다.
+   연결 전 활용 안내에서 목적을 고르고 실제 본인 권한 경로·카탈로그를 확인할 수 있습니다. 관리는 미리보기와 명시적 실행을 거칩니다.
    “내 역할은 뭐야?”, “접근 가능한 리소스 알려줘”, “R100에 접근할 수 있어?”를 사용할 수 있습니다.
-   LLM 없는 결정적 질문 분류 데모이며 일반 AI 챗봇이 아닙니다. 관리는 별도 폼에서 대상·동작을 미리 보고 실행 버튼으로만 전송합니다. API 토큰과 개인키를 화면에 넣지 마세요.
+   LLM 없는 결정적 질문 분류 데모입니다. API용 토큰과 개인키를 화면에 넣지 마세요.
 
-5. 종료할 때 앱을 `Ctrl+C`로 종료하고 DB는 볼륨을 보존합니다.
+5. 각 앱 터미널에서 `Ctrl+C`로 종료하고 DB volume을 보존합니다.
 
    ```sh
-   docker compose stop access-db
+   docker compose --env-file .env stop access-db
    ```
 
-   `down -v`, `prune`, 데이터 초기화는 사용하지 않습니다.
+   런처는 같은 foreground 프로세스를 Java로 교체하므로 JVM의 종료 코드·시그널을 그대로 사용합니다. `down -v`, `prune`, 데이터 초기화는 하지 않습니다.
+
+### 서버 env 규칙과 변경 절차
+
+| 항목 | 규칙 |
+|---|---|
+| env 파일 경로 | 기본 API `.env.api`, MCP `.env.mcp`; `--env-file`의 상대 경로도 **BE 기준**. 루트에서 `python3 BE/scripts/run_server.py api`로 실행해도 동일 |
+| 키 파일 경로 | 절대 로컬 경로 또는 **선택한 env 파일의 디렉터리 기준** 상대 경로. 공백 경로는 따옴표 사용. `file:`/HTTP URL·`~`/환경변수 확장은 지원하지 않음 |
+| JAR·실행 cwd | 항상 런처 파일의 상위 `BE/`; 두 고정 `*-server/build/libs/*-server-0.1.0.jar`만 사용 |
+| 우선순위 | 해당 서버의 허용된 **shell 변수 > 파일 값 > 문서화된 기본값**. 존재하는 빈 shell 값은 오류이며 파일로 돌아가지 않음. 이전 export가 남았다면 해당 변수를 unset한 뒤 실행 |
+| 신뢰·설정 | issuer/audience는 표의 고정값만 허용. API profile은 `local`만, MCP profile 설정은 받지 않음. JAR 안의 정해진 properties만 읽고 외부 cwd/config 설정·임의 JVM/Spring 옵션은 전달하지 않음 |
+
+API 파일은 네 DB 값과 `DEMO_PUBLIC_KEY`가 필수입니다. 선택값은 `SERVER_PORT=8081`, `SPRING_PROFILES_ACTIVE=local`,
+`DEMO_ISSUER=https://demo-delegation.invalid`, `DEMO_AUDIENCE=access-api`입니다.
+MCP 파일은 세 키 경로가 필수이며 선택값은 `SERVER_PORT=8080`, `ACCESS_BASE_URL=http://127.0.0.1:8081`,
+`DEMO_ISSUER=https://demo-issuer.invalid`, `DEMO_AUDIENCE=access-mcp`입니다.
+포트는 1–65535, DB 이름은 영문·숫자·밑줄 1–64자, 전용 DB 사용자 이름은 같은 문자 1–32자이며 `root`는 금지합니다.
+API 주소는 `http://127.0.0.1:<포트>`만 허용합니다. `localhost`, IPv6, 후행 `/`, 사용자정보·query·fragment는 거부합니다.
+API 포트를 바꾸면 MCP의 API 주소 포트도 맞추세요.
+
+UTF-8 파일 최대 64KiB이며 빈 줄·전체 줄 `#` 주석·`KEY=VALUE`를 지원합니다. key/등호 주변 공백은 무시하고 첫 `=`에서 나눕니다.
+따옴표 없는 값은 바깥 공백을 제거하고 **공백 뒤 `#`**부터 주석으로 취급합니다. 값 내부의 추가 `=`·공백·공백 없는 `#`는 보존합니다.
+단일/이중 따옴표 안에서는 공백과 `#`를 보존하며 닫는 따옴표 뒤에는 공백·주석만 가능합니다.
+같은 종류의 따옴표를 값 내부에 넣는 escape 문법은 없습니다. 다른 종류의 따옴표는 인용된 값 내부에 넣을 수 있습니다.
+역슬래시·`$name`·`$(...)`·백틱은 실행/확장하지 않는 데이터입니다. 단, Spring의 재해석을 막기 위해 **`${`가 한 번이라도 있으면 거부**합니다.
+이 검사는 shell이 덮어쓸 파일 값에도 적용합니다. `export`, 여러 줄 값, 제어문자, 중복·알 수 없는·다른 서버의 키도 거부합니다.
+파일을 `source`하거나 셸 문법으로 실행하지 마세요. Compose dotenv와 완전히 같은 문법이 아니므로 특수문자가 있는 비밀번호는 두 파일에서 같은 실제 값이 되도록 작성하세요.
+
+런처 오류는 범주·허용된 키 이름·줄번호만 표시합니다. root 비밀번호·다른 서버 설정·`DEMO_DIR`·`JAVA_TOOL_OPTIONS`·`_JAVA_OPTIONS`·`JDK_JAVA_OPTIONS`·Spring override 변수는 JVM으로 전달하지 않습니다.
+필수 값·파일·Java를 검사한 뒤 실행하고, 비밀번호와 키 내용은 argv에 넣지 않습니다. OS 실행에 필요한 PATH/JAVA_HOME/HOME·locale/temp 변수만 제한적으로 상속합니다.
+설정을 바꿀 때 실제 env 파일만 편집하고 해당 앱을 `Ctrl+C` 후 재실행하세요. DB 비밀번호 변경은 기존 MySQL 사용자의 비밀번호를 자동 갱신하지 않으며, 기존 volume을 삭제해서 해결하지 않습니다.
+
+### 기존 직접 실행과 검증
+
+직접 `java -jar ...` 실행은 그대로 지원하며 런처의 env 파일을 자동으로 읽지 않습니다. 직접 실행은 필요한 DB 환경변수와 키 설정을 별도로 준비해야 합니다.
+이 경우 두 앱의 `DEMO_DIR` 기본값은 실행 cwd 기준 `.dev/demo`; 다른 디렉터리라면 각 터미널에서 같은 절대 경로로 설정합니다.
+`DEMO_DIR`는 새 런처에서는 사용하지 않습니다. 직접 Java 실행은 런처의 외부 설정 차단 보장을 제공하지 않습니다.
+
+```sh
+# BE/에서 실행, 직접 실행용 환경변수가 이미 준비된 경우
+java -jar api-server/build/libs/api-server-0.1.0.jar --spring.profiles.active=local
+java -jar mcp-server/build/libs/mcp-server-0.1.0.jar
+# Docker 없는 개발 검증 전용; MySQL 검증이 아님
+java -jar api-server/build/libs/api-server-0.1.0.jar --spring.profiles.active=fixture
+# 새 런처 단위 검증과 기존 HTTP/MCP 통합 검증
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p test_run_server.py -v
+./gradlew verify
+```
 
 ## Tool ↔ API ↔ DB
 
