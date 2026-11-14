@@ -1,0 +1,1585 @@
+[
+  {
+    "id": "V2-ENV-MYSQL",
+    "contract": "v2",
+    "handler": "mysql",
+    "category": "environment",
+    "purpose": "Isolated real MySQL readiness",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "isolated-db-env"
+    ],
+    "targets": [
+      "Docker",
+      "MySQL"
+    ],
+    "steps": [
+      "Reject developer project/volume and wrong DB port",
+      "Build scoped Docker image",
+      "Start isolated Compose and verify health/mount"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Actual MySQL healthy; developer volume untouched",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-SEED",
+    "contract": "v2",
+    "handler": "v2_seed",
+    "category": "mysql-database",
+    "purpose": "Exact v2 Flyway migration and seed state",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Parse exact per-table counts",
+      "Verify Flyway history1/2/3/4 successes",
+      "Read audit baseline"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "users5 roles4 policies5 resources5 joins4/7/7; migration checksums recorded",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-PROTOCOL",
+    "contract": "v2",
+    "handler": "v2_protocol",
+    "category": "protocol",
+    "purpose": "All twelve real MCP schemas and annotations",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "initialize -> initialized -> tools/list",
+      "Check exactly12 tools and additionalProperties false",
+      "Check readOnlyHint and mutation destructive/idempotent hints"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Six reads and six named relationship mutations only",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-SELF-ID",
+    "contract": "v2",
+    "handler": "v2_self",
+    "category": "self-read",
+    "purpose": "Four actor API/MCP equality and independent subject/ID",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "mcp-local-id-demo",
+      "api-valid",
+      "api-bob",
+      "api-carol",
+      "api-local-id-demo"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Read alice/bob/carol/local-id-demo via MCP and API",
+      "Assert no-role users empty",
+      "Assert subject local-id-demo maps to U900"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "API+MCP same graph; independent ID U900; no foreign paths",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CATALOG",
+    "contract": "v2",
+    "handler": "v2_catalog",
+    "category": "catalog",
+    "purpose": "Ordinary/admin/no-role catalog list/detail visibility",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "List each entity for ordinary/no-role/admin-read-only",
+      "Compare ordinary items to own graph and admin full catalog",
+      "Check exact item fields/order and detail roundtrip",
+      "Compare hidden/nonexistent details"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Ordinary own-only; admin read-only full catalog; no issuer/subject fields; hidden and unknown404 equal",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-REQUESTABLE",
+    "contract": "v2",
+    "handler": "v2_requestable",
+    "category": "catalog",
+    "purpose": "Public requestable role metadata and direct ownership",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Read all seeded roles as admin",
+      "Compute allowed public metadata from protected/requestable/direct memberships",
+      "Compare each actor requestable list"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Only unprotected requestable roles not directly assigned; no policy/resource/private details",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CYCLE-USER-ROLE",
+    "contract": "v2",
+    "handler": "v2_user_role",
+    "category": "mutation",
+    "purpose": "Add/remove/no-op and DB persistence for user_role",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Ensure target link absent",
+      "PUT changes once; duplicate PUT changed false",
+      "Read actual MySQL link",
+      "DELETE changes once; absent DELETE changed false",
+      "Restore initial relation through authorized API"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Correct operation/relationship/present/impact; same DB-derived catalog state",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CYCLE-ROLE-POLICY",
+    "contract": "v2",
+    "handler": "v2_role_policy",
+    "category": "mutation",
+    "purpose": "Add/remove/no-op and DB persistence for role_policy",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Ensure target link absent",
+      "PUT changes once; duplicate PUT changed false",
+      "Read actual MySQL link",
+      "DELETE changes once; absent DELETE changed false",
+      "Restore initial relation through authorized API"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Correct operation/relationship/present/impact; same DB-derived catalog state",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CYCLE-POLICY-RESOURCE",
+    "contract": "v2",
+    "handler": "v2_policy_resource",
+    "category": "mutation",
+    "purpose": "Add/remove/no-op and DB persistence for policy_resource",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Ensure target link absent",
+      "PUT changes once; duplicate PUT changed false",
+      "Read actual MySQL link",
+      "DELETE changes once; absent DELETE changed false",
+      "Restore initial relation through authorized API"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Correct operation/relationship/present/impact; same DB-derived catalog state",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-AUTHORITY",
+    "contract": "v2",
+    "handler": "v2_authority",
+    "category": "security",
+    "purpose": "Scope and DB administrator are independent gates",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage",
+      "mcp-unknown-manage",
+      "api-unknown-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Reject all6 writes for ordinary/no-role/admin-read-only",
+      "Reject all6 reads for admin-manage-only",
+      "Reject direct API read-scope writes and nonadminmanage writes",
+      "Allow admin-manage-only writes",
+      "Reject manage-scoped unknown actors on all6 MCP writes and direct API PUT/DELETE; DB/audit unchanged"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Denied requests leave relations/audit unchanged; actor comes only from verified subject",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-PROTECTED",
+    "contract": "v2",
+    "handler": "v2_protected",
+    "category": "security",
+    "purpose": "Protected endpoints across every relationship combination",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Reject SYSTEM_ADMIN membership adds/removes",
+      "Reject protected role and/or policy endpoints",
+      "Reject protected policy and/or resource endpoints",
+      "Compare exact DB relations/audit before and after"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No protected relationship changed even by admin",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-INVALID",
+    "contract": "v2",
+    "handler": "v2_invalid",
+    "category": "security",
+    "purpose": "Strict mutation schema and IDs",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Test approved/actorId extra keys on all6 writes",
+      "Test traversal/empty/null/number/overlong IDs",
+      "Compare DB/audit unchanged"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "400/INVALID_ARGUMENT; no target mutation",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-MISSING-ATOMIC",
+    "contract": "v2",
+    "handler": "v2_atomic_rejection",
+    "category": "security",
+    "purpose": "Missing references and nonadmin concealment are atomic",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "All3 link types add/remove with missing reference",
+      "Admin gets missing error; nonadmin gets forbidden before existence",
+      "Compare full links/audit snapshots"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No failed transaction creates relationship or audit success row",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-PATHS",
+    "contract": "v2",
+    "handler": "v2_paths",
+    "category": "effective-access",
+    "purpose": "Alternate and last path changes plus requestable roles",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Assign Carol analyst/editor roles",
+      "Observe R100 multiple grants and requestable hide",
+      "Remove analyst and verify remaining editor path",
+      "Remove final editor and verify denied shape",
+      "Verify requestable roles reappear"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Current graph/provenance derive live DB state; no cached obsolete grants",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CONCURRENT-USER-ROLE",
+    "contract": "v2",
+    "handler": "v2_concurrent_user_role",
+    "category": "concurrency",
+    "purpose": "Concurrent duplicate add/remove user_role",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Hold isolated test-owned SYSTEM_ADMIN row; release requests through a barrier and observe actual MySQL waiters",
+      "Run6 parallel identical PUTs",
+      "Require exactly1 changed true",
+      "Run6 parallel identical DELETEs",
+      "Require exactly1 changed true",
+      "Restore original link",
+      "Replay audit serialization and compare response operation/relationship/changed/present multiset; unobserved overlap fails"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Idempotent FK/unique-safe concurrent state; no errors",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CONCURRENT-ROLE-POLICY",
+    "contract": "v2",
+    "handler": "v2_concurrent_role_policy",
+    "category": "concurrency",
+    "purpose": "Concurrent duplicate add/remove role_policy",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Hold isolated test-owned SYSTEM_ADMIN row; release requests through a barrier and observe actual MySQL waiters",
+      "Run6 parallel identical PUTs",
+      "Require exactly1 changed true",
+      "Run6 parallel identical DELETEs",
+      "Require exactly1 changed true",
+      "Restore original link",
+      "Replay audit serialization and compare response operation/relationship/changed/present multiset; unobserved overlap fails"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Idempotent FK/unique-safe concurrent state; no errors",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CONCURRENT-POLICY-RESOURCE",
+    "contract": "v2",
+    "handler": "v2_concurrent_policy_resource",
+    "category": "concurrency",
+    "purpose": "Concurrent duplicate add/remove policy_resource",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Hold isolated test-owned SYSTEM_ADMIN row; release requests through a barrier and observe actual MySQL waiters",
+      "Run6 parallel identical PUTs",
+      "Require exactly1 changed true",
+      "Run6 parallel identical DELETEs",
+      "Require exactly1 changed true",
+      "Restore original link",
+      "Replay audit serialization and compare response operation/relationship/changed/present multiset; unobserved overlap fails"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Idempotent FK/unique-safe concurrent state; no errors",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-CONCURRENT-MIXED",
+    "contract": "v2",
+    "handler": "v2_mixed_concurrency",
+    "category": "concurrency",
+    "purpose": "Concurrent PUT/DELETE reconciles DB and durable audit",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Hold isolated test-owned SYSTEM_ADMIN row; release requests through a barrier and observe actual MySQL waiters",
+      "Start absent for each link type",
+      "Send concurrent add/remove",
+      "Compare2 audit rows and changed/present serialization",
+      "Compare final DB state",
+      "Restore original link",
+      "Replay audit serialization and compare response operation/relationship/changed/present multiset; unobserved overlap fails"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "API responses reflect transaction-time state; final DB agrees with committed audit sequence",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-AUDIT",
+    "contract": "v2",
+    "handler": "v2_audit",
+    "category": "audit",
+    "purpose": "Durable verified-actor audit attribution",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Add link under verified admin",
+      "Read new audit row from real MySQL",
+      "Check actor issuer/subject/localID, operation, target IDs, timestamp and success/changed",
+      "Restore initial link"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Exactly1 durable row for successful changed write; target user never becomes actor",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-AUDIT-ROLLBACK",
+    "contract": "v2",
+    "handler": "v2_audit_rollback",
+    "category": "database-fault",
+    "purpose": "Actual audit insertion failure rolls back relationship update",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Assert isolated TESTER DB and no conflicting constraint",
+      "Read server timestamp cutoff and prove all existing audit rows satisfy it",
+      "Add test-owned CHECK rejecting new audit timestamps after cutoff",
+      "Attempt real MCP mutation and compare links/audit unchanged",
+      "Drop only test-owned CHECK; prove same add succeeds; restore initial relationship"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Audit and link share transaction; controlled MySQL audit failure yields safe error",
+      "error": "INTERNAL_ERROR or UPSTREAM_UNAVAILABLE; no success or leaked DB details"
+    }
+  },
+  {
+    "id": "V2-WRITE-BOUNDARY",
+    "contract": "v2",
+    "handler": "v2_write_boundaries",
+    "category": "security",
+    "purpose": "PUT/DELETE Origin Host and audience boundaries",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "All3 new paths with PUT and DELETE",
+      "Reject evil and browser API Origin and evil Host",
+      "Reject clientJWT at API and delegatedJWT at MCP",
+      "Compare DB/audit unchanged"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "403 boundary denial and401 cross-audience; no persisted writes",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-RESTART",
+    "contract": "v2",
+    "handler": "v2_restart",
+    "category": "mysql-database",
+    "purpose": "Same-volume restart preserves links audit and migration history",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Snapshot relations/audit/history",
+      "Start new local API from frozen JAR on same isolated DB",
+      "Wait for authentication boundary",
+      "Compare exact before/after state"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Relations and audit survive restart; Flyway checksums unchanged",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-JWT",
+    "contract": "v2",
+    "handler": "jwt_identity",
+    "category": "security",
+    "purpose": "Validate transport JWT and exact subject mapping",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "api-negative-jwt-set",
+      "mcp-negative-jwt-set",
+      "api-valid"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Reject missing/expired/wrong issuer/audience/signature/algorithm/claim types",
+      "Reject invalid delegation actor/original issuer/lifetime",
+      "Reject client JWT at API",
+      "Check unknown/case/accent/space subject variants"
+    ],
+    "expected": {
+      "http": "Invalid JWT 401; unknown verified subject 403",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No variant maps to alice",
+      "error": "FORBIDDEN / UPSTREAM_ACCESS_DENIED"
+    }
+  },
+  {
+    "id": "V2-DELEGATION",
+    "contract": "v2",
+    "handler": "delegation",
+    "category": "fault-injection",
+    "purpose": "Verify signed downstream delegation and cross-use rejection",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-manipulated",
+      "mcp-near-expiry"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Capture delegation at controlled fault upstream",
+      "Check issuer/audience/actor/original issuer/expiry <= client exp",
+      "Send captured delegated token to real API and MCP"
+    ],
+    "expected": {
+      "http": "API 200; MCP cross-use 401",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Verified subject only; client claims never copied",
+      "error": "Cross-audience rejection"
+    }
+  },
+  {
+    "id": "V2-PROVENANCE",
+    "contract": "v2",
+    "handler": "provenance",
+    "category": "self-read",
+    "purpose": "Deduplicate resources while retaining every authorized provenance path",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "get_my_access alice/bob",
+      "Check role/policy/grant uniqueness and user-specific paths",
+      "Check every allowed resource",
+      "Compare forbidden R400 and nonexistent R999 denial shapes"
+    ],
+    "expected": {
+      "http": "200",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "R100 has three distinct alice paths; shared policy paths scoped to current user",
+      "error": "Denied/unknown: allowed false, resource null, grants empty"
+    }
+  },
+  {
+    "id": "V2-ARGUMENTS",
+    "contract": "v2",
+    "handler": "arguments",
+    "category": "security",
+    "purpose": "Reject identity override and malformed tool arguments",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "api-valid"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Unknown keys userId/url/roleId",
+      "Wrong resource types/path/newline/oversize",
+      "Check five concepts and invalid concept",
+      "API userId query and bad resource path"
+    ],
+    "expected": {
+      "http": "API invalid arguments 400",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Concept contains only concept/explanation",
+      "error": "INVALID_ARGUMENT"
+    }
+  },
+  {
+    "id": "V2-ORIGIN-STATIC",
+    "contract": "v2",
+    "handler": "origin_static",
+    "category": "security",
+    "purpose": "Exercise actual POST Origin/Host and static resource boundaries",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "api-valid"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "GET and POST evil/null/alternate Origin and Host",
+      "Same origin succeeds with token",
+      "API browser origin denied",
+      "Static allowlist and secret URL rejection"
+    ],
+    "expected": {
+      "http": "Invalid Origin/Host 403; unauthenticated/secret paths 401; static GET 200",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "CSP restricts scripts to self",
+      "error": "No static credentials exposed"
+    }
+  },
+  {
+    "id": "V2-USER-ISOLATION",
+    "contract": "v2",
+    "handler": "isolation",
+    "category": "concurrency",
+    "purpose": "Concurrent and reused-thread caller identity isolation",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "mcp-connect-only"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "32 concurrent authorized/unauthorized calls",
+      "Single-thread server alice/bob/carol switching",
+      "Arbitrary session ID without credential"
+    ],
+    "expected": {
+      "http": "Missing credential 401",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Responses belong only to verified caller",
+      "error": "FORBIDDEN"
+    }
+  },
+  {
+    "id": "V2-PROTOCOL-LIMITS",
+    "contract": "v2",
+    "handler": "protocol_limits",
+    "category": "mixed-boundary",
+    "purpose": "Encoded paths, protocol errors, initialize metadata and request limits",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Exercise /mcp /%6dcp /m%63p",
+      "Malformed JSON and unknown method/tool",
+      "Exact 16384 bytes and oversized fixed/chunked requests",
+      "Check oversized request never reaches controlled upstream",
+      "Initialize with secret marker metadata"
+    ],
+    "expected": {
+      "http": "Malformed 400; unknown method 500; oversize 413; notification 202",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Exact request size succeeds; marker not echoed",
+      "error": "MCP_REQUEST_REJECTED"
+    }
+  },
+  {
+    "id": "V2-UPSTREAM-FAULTS",
+    "contract": "v2",
+    "handler": "upstream_faults",
+    "category": "fault-injection",
+    "purpose": "Bound upstream faults, response size and time without leaking bodies",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Controlled upstream 500/401/403/redirect/large/wrong-id/malformed/disconnect",
+      "Slow headers and body",
+      "Extra-field stripping"
+    ],
+    "expected": {
+      "http": "MCP HTTP 200",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Controlled fault upstream only; not MySQL evidence",
+      "error": "UPSTREAM_UNAVAILABLE / UPSTREAM_ACCESS_DENIED / UPSTREAM_INVALID_RESPONSE"
+    }
+  },
+  {
+    "id": "V2-DISCONNECT",
+    "contract": "v2",
+    "handler": "disconnect",
+    "category": "fault-injection",
+    "purpose": "Disconnect cleanup and overlapping caller identities",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-connect-only"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Disconnect real MCP socket while controlled upstream waits",
+      "Reject subsequent unauthorized calls",
+      "Concurrent alice/bob requests overlap"
+    ],
+    "expected": {
+      "http": "Missing token 401",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No identity leak; peak concurrent upstream calls >= 2",
+      "error": "FORBIDDEN"
+    }
+  },
+  {
+    "id": "V2-PACKAGING",
+    "contract": "v2",
+    "handler": "packaging",
+    "category": "artifact",
+    "purpose": "Inspect actual handed-off JAR static allowlist",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "verified-build"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Open actual MCP JAR",
+      "Assert exactly chat.html/chat.js/chat.css",
+      "Reject PEM/JWT/env packaging and old source trees"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Only three deployable FE assets; backend layout under BE",
+      "error": "No credential packaging"
+    }
+  },
+  {
+    "id": "V2-EXACT-IDENTITY",
+    "contract": "v2",
+    "handler": "exact_identity",
+    "category": "mysql-database",
+    "purpose": "Prove issuer and subject case/accent/trailing-space equality in real MySQL",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "project-db-env"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Execute exact issuer+subject predicates against seeded users",
+      "Check base pair matches once",
+      "Check all issuer and subject variants match zero"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Seven actual MySQL comparisons; no normalization",
+      "error": "Variant match is FAIL"
+    }
+  },
+  {
+    "id": "V2-NO-FALLBACK",
+    "contract": "v2",
+    "handler": "db_unavailable",
+    "category": "startup-negative",
+    "purpose": "Unavailable database and mixed local/fixture profiles fail visibly",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "verified-build",
+      "unavailable-loopback-database"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Start local API with unavailable datasource",
+      "Start local,fixture API with unavailable datasource",
+      "Require nonzero exit and no Started ApiApplication"
+    ],
+    "expected": {
+      "http": "Server never becomes ready",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No fixture fallback; mixed profile rejected",
+      "error": "Startup failure required"
+    }
+  },
+  {
+    "id": "V2-BROWSER-READ",
+    "contract": "v2",
+    "handler": "browser",
+    "category": "browser",
+    "purpose": "Real same-origin read questions and account clearing",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Load actual packaged static assets withHTTP200",
+      "Ask all6 supported questions",
+      "Verify actual MCP response and rendered data",
+      "Switch/disconnect alice bob carol and expired/scope failures",
+      "Ask users/roles/policies/resources catalog list and own/foreign/missing detail with exact Tool args",
+      "Assert ordinary own-only/admin full visibility and indistinguishable hidden/missing errors",
+      "Ask requestable roles and assert public metadata only"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Browser PASS requires real UI and MCP, not API substitute",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-BROWSER-MANAGE",
+    "contract": "v2",
+    "handler": "v2_browser_manage",
+    "category": "browser",
+    "purpose": "Immutable preview explicit execute and cancel",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Preview names verified actor and exactIDs; no write",
+      "Cancel/input edit/operation edit/Enter cannot execute",
+      "Account switch clears preview",
+      "Explicit double click sends exactly1 write",
+      "Success refreshes reads; manage-only cannot preview actor"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Actual UI->MCP->API->MySQL mutation only after explicit click",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-BROWSER-UNKNOWN",
+    "contract": "v2",
+    "handler": "v2_browser_faults",
+    "category": "browser-fault",
+    "purpose": "Committed write with lost/malformed/late response",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-admin-manage-only",
+      "mcp-alice-manage",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-admin-read",
+      "api-admin-manage"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Send real mutation and observe actual successful MCP response before response loss (not independent per-mode DB commit proof)",
+      "Lose or corrupt browser response only after commit",
+      "Require outcome unknown and no auto mutation retry",
+      "Permit read refresh",
+      "Switch actor before late response and forbid old result rendering"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "Successful real MCP response observed before controlled loss; unknown outcome/no auto retry; DB commit proof belongs to separate DB handlers",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  },
+  {
+    "id": "V2-LOG-SECRETS",
+    "contract": "v2",
+    "handler": "logs",
+    "category": "runtime-audit",
+    "purpose": "Owned JVM shutdown and raw log secret scan",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER v2 TEST_READY; frozen verified API/MCP JARs",
+      "Exclusive TESTER runtime ownership",
+      "Isolated mcp-access-e2e-v2 MySQL project/volume on loopback3308",
+      "Fresh same-key fixtures after server readiness"
+    ],
+    "fixtures": [
+      "all-runtime-token-fixtures"
+    ],
+    "targets": [
+      "API",
+      "MCP",
+      "MySQL"
+    ],
+    "steps": [
+      "Wait only for existing fault requests",
+      "Stop runner-owned JVMs",
+      "Scan raw private logs before sanitized evidence copy"
+    ],
+    "expected": {
+      "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
+      "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
+      "domain": "No tokens/private keys/attacker markers in logs",
+      "error": "No unexpected error; rejection must match exact handler assertions"
+    }
+  }
+]

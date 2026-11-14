@@ -1,0 +1,254 @@
+[
+  {
+    "id": "UI-GUIDE",
+    "contract": "v2",
+    "purpose": "Connection-first Korean capability guidance",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Before connect inspect capabilities and five operation groups",
+      "Activate a read example or verify its connection-required disabled state",
+      "Confirm MCP mutation request count remains zero"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "Visible purpose/examples/inputs/read-manage restrictions; requestable catalog is not application approval",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_guide"
+  },
+  {
+    "id": "UI-GRAPH",
+    "contract": "v2",
+    "purpose": "Actual self User Role Policy Resource relationship paths",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Connect alice and activate own-access example",
+      "Observe actual get_my_access response",
+      "Parse exactly one user/roleId/policyId/resourceId tuple per rendered row and compare multisets 1:1 to real provenance",
+      "Reject foreign R400; connect no-role carol and verify empty state"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "Graph is derived only from current verified API/MCP result",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_graph"
+  },
+  {
+    "id": "UI-CATALOG",
+    "contract": "v2",
+    "purpose": "Permitted entity catalog selection and details",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Connect ordinary user and browse real entity catalogs",
+      "Select visible entity and observe exact get_access_entity arguments/result",
+      "Connect read-only admin and verify full catalog visibility",
+      "Browse requestable public metadata and restrictions"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "No fabricated or foreign ordinary catalog items; visible details match real response",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_catalog"
+  },
+  {
+    "id": "UI-MANAGE",
+    "contract": "v2",
+    "purpose": "Catalog targets into immutable preview then explicit execution",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Connect admin; browse real user and role catalogs",
+      "Select carol and role-analyst into management form",
+      "Preview and cancel; assert mutation zero",
+      "Preview again and explicitly execute once",
+      "Verify actual success and refreshed selected target relationships",
+      "Remove test-added relation through existing management flow",
+      "Open management through actual capability button and assert open/visible",
+      "After settle assert observed add+remove mutation request count is exactly2"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "Only explicit execute writes; catalog selection/guide/preview do not mutate",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_manage"
+  },
+  {
+    "id": "UI-SWITCH",
+    "contract": "v2",
+    "purpose": "Discovery state clears on account changes and denied actors",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Populate alice graph/catalog/selection",
+      "Switch to bob and assert all prior data/selection/preview clear",
+      "Read bob graph and verify different resources",
+      "Use admin read-only for write denial and no-role carol for empty state",
+      "Disconnect and verify token/data clear",
+      "Open management through actual capability button before readonly-admin preview/write denial"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "No prior actor graph, catalog selection or late preview reused",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_switch"
+  },
+  {
+    "id": "UI-MOBILE",
+    "contract": "v2",
+    "purpose": "Mobile width and keyboard navigation for discovery",
+    "category": "ui-discovery",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "New discovery UI packaged in explicit MANAGER TEST_READY MCP JAR",
+      "Exclusive TESTER runtime/browser ownership",
+      "Actual isolated MySQL datasource marker verified",
+      "Stable UI selectors supplied in handoff"
+    ],
+    "fixtures": [
+      "mcp-admin",
+      "mcp-admin-read-only",
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API",
+      "MySQL"
+    ],
+    "steps": [
+      "Set viewport390x844",
+      "Inspect visible guidance, accessible labels and no horizontal overflow",
+      "Use natural Tab navigation to actual read button then Enter; naturally Tab to relationship summary and verify Enter closes/Space opens",
+      "Record actual Tab focus sequence; never force DOM focus/open for the keyboard accessibility assertion",
+      "Save screenshot after token input is empty"
+    ],
+    "expected": {
+      "http": "Real same-origin static/MCP successful responses; safe authorization rejection",
+      "rpc": "Exact read/mutation Tool names and argument objects; no simulated successful result",
+      "domain": "Readable mobile layout and keyboard-executable read flow; no silent mutation",
+      "error": "Missing new UI/selector/browser => BLOCKED; product mismatch => FAIL"
+    },
+    "handler": "ui_mobile"
+  }
+]

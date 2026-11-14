@@ -1,0 +1,675 @@
+[
+  {
+    "id": "ENV-MYSQL",
+    "purpose": "Build project MySQL image and verify real container health and handed-off volume",
+    "category": "environment",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "project-db-env"
+    ],
+    "targets": [
+      "MySQL",
+      "API"
+    ],
+    "steps": [
+      "docker info",
+      "docker compose up --build --wait access-db",
+      "Inspect health and mounted named volume"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "Not applicable",
+      "domain": "Real MySQL container healthy on handed-off named volume",
+      "error": "Missing daemon/config/image/readiness => BLOCKED"
+    },
+    "handler": "mysql",
+    "contract": "v1"
+  },
+  {
+    "id": "MCP-USERS",
+    "purpose": "Initialize real MCP then compare API profiles for all users",
+    "category": "mysql-api-mcp",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "api-valid",
+      "api-bob",
+      "api-carol"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "initialize",
+      "notifications/initialized",
+      "tools/list strict schemas",
+      "get_my_access for alice/bob/carol and compare two real API instances"
+    ],
+    "expected": {
+      "http": "200; initialized 202",
+      "rpc": "Protocol 2025-06-18; exactly three strict tools",
+      "domain": "alice R100/R200/R300; bob R100/R400; carol empty grants",
+      "error": "No tool errors"
+    },
+    "handler": "protocol_users",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-INDEPENDENT-ID",
+    "purpose": "RB1 regression: local database ID differs from verified JWT subject",
+    "category": "mysql-api-mcp",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-local-id-demo"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Authenticate MCP with subject local-id-demo",
+      "Call get_my_access through real MCP to local MySQL API",
+      "Assert user.id U900 and empty role/policy/resource graph"
+    ],
+    "expected": {
+      "http": "200",
+      "rpc": "Successful structuredContent and JSON text agree",
+      "domain": "Subject local-id-demo maps to independent user ID U900; no foreign grants",
+      "error": "No UPSTREAM_INVALID_RESPONSE"
+    },
+    "handler": "independent_id",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-DELEGATION",
+    "purpose": "Verify signed downstream delegation and cross-use rejection",
+    "category": "fault-injection",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-manipulated",
+      "mcp-near-expiry"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Capture delegation at controlled fault upstream",
+      "Check issuer/audience/actor/original issuer/expiry <= client exp",
+      "Send captured delegated token to real API and MCP"
+    ],
+    "expected": {
+      "http": "API 200; MCP cross-use 401",
+      "rpc": "Valid calls succeed",
+      "domain": "Verified subject only; client claims never copied",
+      "error": "Cross-audience rejection"
+    },
+    "handler": "delegation",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-JWT",
+    "purpose": "Validate transport JWT and exact subject mapping",
+    "category": "mysql-security",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "api-negative-jwt-set",
+      "mcp-negative-jwt-set",
+      "api-valid"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Reject missing/expired/wrong issuer/audience/signature/algorithm/claim types",
+      "Reject invalid delegation actor/original issuer/lifetime",
+      "Reject client JWT at API",
+      "Check unknown/case/accent/space subject variants"
+    ],
+    "expected": {
+      "http": "Invalid JWT 401; unknown verified subject 403",
+      "rpc": "Safe tool error for unknown user",
+      "domain": "No variant maps to alice",
+      "error": "FORBIDDEN / UPSTREAM_ACCESS_DENIED"
+    },
+    "handler": "jwt_identity",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-SCOPE",
+    "purpose": "Separate scopes from domain grants and ignore identity headers",
+    "category": "mysql-security",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-no-scope",
+      "mcp-connect-only",
+      "mcp-manipulated",
+      "api-no-scope",
+      "api-carol"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Reject missing transport/tool scopes for every tool",
+      "Call manipulated carol JWT",
+      "Call API and MCP with X-User-Id alice"
+    ],
+    "expected": {
+      "http": "Missing entry scope 403",
+      "rpc": "Tool scope isError true",
+      "domain": "carol remains carol with no resources",
+      "error": "FORBIDDEN"
+    },
+    "handler": "scope",
+    "contract": "v1"
+  },
+  {
+    "id": "ACCESS-PROVENANCE",
+    "purpose": "Deduplicate resources while retaining every authorized provenance path",
+    "category": "mysql-api-mcp",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "get_my_access alice/bob",
+      "Check role/policy/grant uniqueness and user-specific paths",
+      "Check every allowed resource",
+      "Compare forbidden R400 and nonexistent R999 denial shapes"
+    ],
+    "expected": {
+      "http": "200",
+      "rpc": "Successful structuredContent equals text JSON",
+      "domain": "R100 has three distinct alice paths; shared policy paths scoped to current user",
+      "error": "Denied/unknown: allowed false, resource null, grants empty"
+    },
+    "handler": "provenance",
+    "contract": "v1"
+  },
+  {
+    "id": "INPUT-ARGUMENTS",
+    "purpose": "Reject identity override and malformed tool arguments",
+    "category": "mysql-security",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "api-valid"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Unknown keys userId/url/roleId",
+      "Wrong resource types/path/newline/oversize",
+      "Check five concepts and invalid concept",
+      "API userId query and bad resource path"
+    ],
+    "expected": {
+      "http": "API invalid arguments 400",
+      "rpc": "Invalid tools isError true",
+      "domain": "Concept contains only concept/explanation",
+      "error": "INVALID_ARGUMENT"
+    },
+    "handler": "arguments",
+    "contract": "v1"
+  },
+  {
+    "id": "BOUNDARY-ORIGIN",
+    "purpose": "Exercise actual POST Origin/Host and static resource boundaries",
+    "category": "mysql-security",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "api-valid"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "GET and POST evil/null/alternate Origin and Host",
+      "Same origin succeeds with token",
+      "API browser origin denied",
+      "Static allowlist and secret URL rejection"
+    ],
+    "expected": {
+      "http": "Invalid Origin/Host 403; unauthenticated/secret paths 401; static GET 200",
+      "rpc": "Authorized same-origin tool succeeds",
+      "domain": "CSP restricts scripts to self",
+      "error": "No static credentials exposed"
+    },
+    "handler": "origin_static",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-CONCURRENCY",
+    "purpose": "Concurrent and reused-thread caller identity isolation",
+    "category": "mysql-security",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "mcp-connect-only"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "32 concurrent authorized/unauthorized calls",
+      "Single-thread server alice/bob/carol switching",
+      "Arbitrary session ID without credential"
+    ],
+    "expected": {
+      "http": "Missing credential 401",
+      "rpc": "Scope failure isError true",
+      "domain": "Responses belong only to verified caller",
+      "error": "FORBIDDEN"
+    },
+    "handler": "isolation",
+    "contract": "v1"
+  },
+  {
+    "id": "BOUNDARY-PROTOCOL",
+    "purpose": "Encoded paths, protocol errors, initialize metadata and request limits",
+    "category": "mixed-boundary",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "mcp-alice"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Exercise /mcp /%6dcp /m%63p",
+      "Malformed JSON and unknown method/tool",
+      "Exact 16384 bytes and oversized fixed/chunked requests",
+      "Check oversized request never reaches controlled upstream",
+      "Initialize with secret marker metadata"
+    ],
+    "expected": {
+      "http": "Malformed 400; unknown method 500; oversize 413; notification 202",
+      "rpc": "Unknown tool -32603 MCP_REQUEST_FAILED; invalid args INVALID_ARGUMENT",
+      "domain": "Exact request size succeeds; marker not echoed",
+      "error": "MCP_REQUEST_REJECTED"
+    },
+    "handler": "protocol_limits",
+    "contract": "v1"
+  },
+  {
+    "id": "UPSTREAM-FAULTS",
+    "purpose": "Bound upstream faults, response size and time without leaking bodies",
+    "category": "fault-injection",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "mcp-alice"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Controlled upstream 500/401/403/redirect/large/wrong-id/malformed/disconnect",
+      "Slow headers and body",
+      "Extra-field stripping"
+    ],
+    "expected": {
+      "http": "MCP HTTP 200",
+      "rpc": "Safe isError tool results within 3.5 seconds",
+      "domain": "Controlled fault upstream only; not MySQL evidence",
+      "error": "UPSTREAM_UNAVAILABLE / UPSTREAM_ACCESS_DENIED / UPSTREAM_INVALID_RESPONSE"
+    },
+    "handler": "upstream_faults",
+    "contract": "v1"
+  },
+  {
+    "id": "AUTH-DISCONNECT",
+    "purpose": "Disconnect cleanup and overlapping caller identities",
+    "category": "fault-injection",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-connect-only"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Disconnect real MCP socket while controlled upstream waits",
+      "Reject subsequent unauthorized calls",
+      "Concurrent alice/bob requests overlap"
+    ],
+    "expected": {
+      "http": "Missing token 401",
+      "rpc": "Scope errors retained",
+      "domain": "No identity leak; peak concurrent upstream calls >= 2",
+      "error": "FORBIDDEN"
+    },
+    "handler": "disconnect",
+    "contract": "v1"
+  },
+  {
+    "id": "BUILD-PACKAGING",
+    "purpose": "Inspect actual handed-off JAR static allowlist",
+    "category": "artifact",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "verified-build"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Open actual MCP JAR",
+      "Assert exactly chat.html/chat.js/chat.css",
+      "Reject PEM/JWT/env packaging and old source trees"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "Not applicable",
+      "domain": "Only three deployable FE assets; backend layout under BE",
+      "error": "No credential packaging"
+    },
+    "handler": "packaging",
+    "contract": "v1"
+  },
+  {
+    "id": "MYSQL-EXACT-IDENTITY",
+    "purpose": "Prove issuer and subject case/accent/trailing-space equality in real MySQL",
+    "category": "mysql-database",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "project-db-env"
+    ],
+    "targets": [
+      "MySQL",
+      "API"
+    ],
+    "steps": [
+      "Execute exact issuer+subject predicates against seeded users",
+      "Check base pair matches once",
+      "Check all issuer and subject variants match zero"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "Not applicable",
+      "domain": "Seven actual MySQL comparisons; no normalization",
+      "error": "Variant match is FAIL"
+    },
+    "handler": "exact_identity",
+    "contract": "v1"
+  },
+  {
+    "id": "MYSQL-RESTART",
+    "purpose": "Verify same-volume migration and seed stability across API startups",
+    "category": "mysql-database",
+    "profiles": [
+      "local"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes",
+      "Real MySQL readiness and local Flyway migrations"
+    ],
+    "fixtures": [
+      "project-db-env",
+      "verified-build"
+    ],
+    "targets": [
+      "MySQL",
+      "API"
+    ],
+    "steps": [
+      "Read history checksums and seven table counts",
+      "Start another verified local-profile API",
+      "Wait until HTTP auth boundary ready",
+      "Compare history and counts exactly"
+    ],
+    "expected": {
+      "http": "New API /api/me without token 401",
+      "rpc": "Not applicable",
+      "domain": "V1/V2 and independent-ID V3 applied; counts 4/3/4/4/3/6/6 unchanged; same named volume",
+      "error": "Migration/history/count change is FAIL"
+    },
+    "handler": "restart",
+    "contract": "v1"
+  },
+  {
+    "id": "BROWSER-QUESTIONS",
+    "purpose": "Real browser questions reach actual MCP and isolate account transitions",
+    "category": "browser",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "mcp-alice",
+      "mcp-bob",
+      "mcp-carol",
+      "mcp-expired",
+      "mcp-connect-only"
+    ],
+    "targets": [
+      "browser",
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Connect and ask all six supported Korean question categories",
+      "Assert real tools/call responses and rendered results",
+      "Switch alice to bob and clear prior data",
+      "Disconnect and reconnect carol with no roles",
+      "Expired JWT and tool-scope error handling"
+    ],
+    "expected": {
+      "http": "Real MCP 200 and expired 401",
+      "rpc": "Observe actual MCP request/response, no route fulfillment",
+      "domain": "alice/bob differing resources; carol no roles; token and prior messages cleared",
+      "error": "Unavailable browser/tool => BLOCKED, never API substitute"
+    },
+    "handler": "browser",
+    "contract": "v1"
+  },
+  {
+    "id": "MYSQL-NO-FALLBACK",
+    "purpose": "Unavailable database and mixed local/fixture profiles fail visibly",
+    "category": "startup-negative",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "verified-build",
+      "unavailable-loopback-database"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Start local API with unavailable datasource",
+      "Start local,fixture API with unavailable datasource",
+      "Require nonzero exit and no Started ApiApplication"
+    ],
+    "expected": {
+      "http": "Server never becomes ready",
+      "rpc": "Not applicable",
+      "domain": "No fixture fallback; mixed profile rejected",
+      "error": "Startup failure required"
+    },
+    "handler": "db_unavailable",
+    "contract": "v1"
+  },
+  {
+    "id": "LOG-SECRETS",
+    "purpose": "Stop owned test processes and inspect logs for secret absence",
+    "category": "runtime-audit",
+    "profiles": [
+      "local",
+      "fixture"
+    ],
+    "preconditions": [
+      "MANAGER TEST_READY with exclusive TESTER runtime ownership",
+      "Matching frozen API/MCP JAR hashes"
+    ],
+    "fixtures": [
+      "all-runtime-token-fixtures"
+    ],
+    "targets": [
+      "MCP",
+      "API"
+    ],
+    "steps": [
+      "Wait for controlled upstream requests to finish",
+      "Stop only processes created by runner",
+      "Scan raw temporary logs before sanitized evidence copy"
+    ],
+    "expected": {
+      "http": "Not applicable",
+      "rpc": "Not applicable",
+      "domain": "No fixtures, dynamically issued JWTs, private key or attacker marker in logs",
+      "error": "Any secret in raw log => FAIL"
+    },
+    "handler": "logs",
+    "contract": "v1"
+  }
+]

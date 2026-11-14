@@ -1,0 +1,29 @@
+**/.gradle/
+**/build/
+/.dev/
+BE/.dev/
+BE/.env
+BE/.env.e2e
+BE/test-results/
+**/__pycache__/
+*.log
+
+# Local coordination history and task prompts; review files before any future inclusion.
+/.coordination/
+# Local credentials and database artifacts; keep only explicit environment templates.
+**/.env*
+!**/.env.example
+!**/.env.e2e.example
+*.pem
+*.jwt
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+**/node_modules/
+.DS_Store

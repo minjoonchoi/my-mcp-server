@@ -1,0 +1,19 @@
+{
+  "capabilities": "#capabilities",
+  "own_read": "#discover-own",
+  "graph": "#relationship-view",
+  "graph_paths": "#relationship-paths > li",
+  "catalog_entity": "#browse-entity",
+  "catalog_load": "#discover-browse",
+  "catalog_items": "#browse-item",
+  "catalog_detail_button": "#browse-detail",
+  "catalog_detail": "#browse-result",
+  "requestable_read": "#discover-requestable",
+  "requestable_view": "#messages",
+  "selection": "#browse-id",
+  "manage_open": "#discover-manage",
+  "manage_load_targets": "#manage-load-targets",
+  "manage_first_select": "#manage-first-select",
+  "manage_second_select": "#manage-second-select",
+  "concept_read": "#discover-concept"
+}
