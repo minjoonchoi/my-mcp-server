@@ -2,6 +2,7 @@ package example.api;
 
 import java.util.Map;
 import java.util.Set;
+import example.security.VerifiedCaller;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -14,8 +15,9 @@ import example.contract.ContextAccessResponses.*;
 @PreAuthorize("hasAuthority('SCOPE_access.read')")
 public class ContextAccessController {
     private final ContextAccessService service;
+    private final VerifiedCaller callers;
 
-    public ContextAccessController(ContextAccessService service) { this.service = service; }
+    public ContextAccessController(ContextAccessService service, VerifiedCaller callers) { this.service = service; this.callers = callers; }
 
     @GetMapping("/pages")
     public PageList pages(@AuthenticationPrincipal Jwt caller, @RequestParam MultiValueMap<String, String> query) {
@@ -73,5 +75,5 @@ public class ContextAccessController {
         return new Paging(after, limit);
     }
 
-    private static String issuer(Jwt caller) { return caller.getClaimAsString("original_iss"); }
+    private String issuer(Jwt caller) { return callers.resolve(caller).issuer(); }
 }

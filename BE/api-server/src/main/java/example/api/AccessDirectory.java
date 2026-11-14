@@ -89,6 +89,11 @@ public class AccessDirectory implements AccessRepository {
                 .map(policyId -> new example.contract.ContextAccessResponses.Grant(roleId, policyId))).toList();
         return ContextFixtures.snapshot(assignments);
     }
+    record LoginIdentity(String id, String name, boolean administrator) {}
+    synchronized LoginIdentity loginIdentity(String issuer, String subject) {
+        User user = users.get(new Identity(issuer, subject));
+        return user == null ? null : new LoginIdentity(user.id(), user.name(), admin(user));
+    }
     private boolean admin(User user) { return user.roleIds().contains("SYSTEM_ADMIN"); }
     private boolean protectedId(String entity,String id) {
         return (entity.equals("roles") && id.equals("SYSTEM_ADMIN")) || (entity.equals("policies") && id.equals("SYSTEM_POLICY")) || (entity.equals("resources") && id.equals("R900"));

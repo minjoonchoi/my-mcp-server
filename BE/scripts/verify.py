@@ -150,11 +150,12 @@ class Integration(unittest.TestCase):
 
     @classmethod
     def refresh_tokens(cls):
-        before = {name:(cls.credentials/name).read_bytes() for name in ['issuer-public.pem','delegation-public.pem']}
+        before = {name:(cls.credentials/name).read_bytes() for name in ['issuer-public.pem','issuer-private.pem','delegation-public.pem',
+                  'delegation-private.pem','fixture-issuer-private.pem','login-passwords.json','login-accounts.json','login-accounts.sql']}
         subprocess.run(['java',str(ROOT/'tools/DemoCredentials.java'),str(cls.credentials),'--refresh-fixtures'],
                        check=True,stdout=subprocess.DEVNULL)
         if before != {name:(cls.credentials/name).read_bytes() for name in before}:
-            raise AssertionError('Fixture refresh changed a server verification key')
+            raise AssertionError('Fixture refresh changed key or login provisioning material')
         cls.tokens = {p.stem:p.read_text().strip() for p in cls.credentials.glob('*.jwt')}
 
     @classmethod
@@ -344,7 +345,8 @@ class Integration(unittest.TestCase):
             self.assertEqual(request(self.mcp,path,extra={'Origin':f'http://127.0.0.1:{self.mcp}','Host':'127.0.0.1:1'})[0],403)
             self.assertEqual(request(self.api,path)[0],401)
             self.assertEqual(request(self.mcp,path,method='POST')[0],401)
-        for path in ['/delegation-private.pem','/issuer-public.pem','/mcp-alice.jwt','/application.properties','/README.md','/tests/chat.test.mjs']:
+        for path in ['/delegation-private.pem','/issuer-private.pem','/issuer-public.pem','/mcp-alice.jwt','/login-passwords.json',
+                     '/login-accounts.json','/login-accounts.sql','/application.properties','/README.md','/tests/chat.test.mjs']:
             self.assertEqual(request(self.mcp,path)[0],401)
 
     def test_08_context_isolation(self):

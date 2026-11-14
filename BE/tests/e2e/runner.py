@@ -324,15 +324,17 @@ class Context:
     def restart(self):
         self.setup()
         sql = "SELECT version,script,checksum,success FROM flyway_schema_history ORDER BY installed_rank;\n"
-        for table in ['users', 'roles', 'policies', 'resources', 'user_roles', 'role_policies', 'policy_resources']:
+        for table in ['users', 'roles', 'policies', 'resources', 'user_roles', 'role_policies', 'policy_resources', 'login_accounts']:
             sql += f"SELECT '{table}',COUNT(*) FROM {table};\n"
         before = self.database(sql)
-        expected = {'users': 5, 'roles': 4, 'policies': 14, 'resources': 5, 'user_roles': 4, 'role_policies': 16, 'policy_resources': 7}
+        expected = {'users': 5, 'roles': 4, 'policies': 14, 'resources': 5, 'user_roles': 4, 'role_policies': 16, 'policy_resources': 7,
+                    'login_accounts': 0}
         parsed = parse_snapshot(before)
         assert parsed['counts'] == expected, 'Unexpected exact seed counts: ' + str(parsed['counts'])
         scripts = [row[1] for row in parsed['history']]
         assert scripts == ['V1__access_schema.sql', 'V2__local_demo_seed.sql', 'V3__management_schema.sql',
-                           'V4__local_management_seed.sql', 'V5__context_access_schema.sql', 'V6__local_context_access_seed.sql'], 'Missing migrations'
+                           'V4__local_management_seed.sql', 'V5__context_access_schema.sql', 'V6__local_context_access_seed.sql',
+                           'V7__login_accounts_schema.sql'], 'Missing migrations'
         port = self.runtime.start('api-server', 'api-same-volume-restart', '--spring.profiles.active=local')
         # HTTP readiness confirms startup and migrations completed; no stale short-lived API fixture needed.
         status, _, _ = self.module.request(port, '/api/me')

@@ -14,8 +14,10 @@ FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실�
    java tools/DemoCredentials.java .dev/demo --fixtures
    ```
 
-   새 디렉터리에만 생성합니다. MCP 사용자 토큰은 60분 수명이며 `mcp-alice.jwt`, `mcp-bob.jwt`, `mcp-carol.jwt`, `mcp-local-id-demo.jwt`, `mcp-admin.jwt`입니다.
-   만료 후 새 디렉터리에 생성하고 두 앱의 `DEMO_DIR`를 그 절대 경로로 지정해 재시작합니다.
+   새 디렉터리에만 생성합니다. `alice`, `bob`, `carol`, `local-id-demo`, `admin`의 서로 다른 임의 비밀번호를 비공개 `login-passwords.json`에 저장합니다.
+   로컬 편집기로 필요한 계정의 비밀번호를 확인하세요. 공통 기본 비밀번호는 없으며 비밀번호·토큰·개인키를 로그나 저장소에 넣지 않습니다.
+   `login-accounts.json`과 `login-accounts.sql`에는 비밀번호 해시와 계정 매핑만 저장합니다. 일반 생성과 `--fixtures` 모두 로그인 자료를 만들며, `--fixtures`는 검증용 JWT도 추가합니다.
+   기존 수동 연결용 `mcp-alice.jwt` 등은 60분 수명입니다. 로그인으로 발급하는 토큰은 기본 15분이며 UI에서 다시 로그인할 수 있습니다.
    두 앱 모두 `DEMO_DIR` 기본값은 실행 디렉터리 기준 `.dev/demo`입니다. 다른 디렉터리를 쓸 때는 API와 MCP를 시작하는 **각 터미널에서 같은 절대 경로**를 설정하세요.
 
    ```sh
@@ -45,7 +47,17 @@ FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실�
 
    API는 `127.0.0.1:8081`입니다. `local` 프로필은 실제 JDBC/MySQL을 사용하고 Flyway가 스키마와 개발 seed를 적용합니다.
    DB 연결/마이그레이션 실패 시 기동 실패하며 인메모리로 우회하지 않습니다. `local,fixture` 동시 활성화도 기동 거부합니다.
-   Docker 없이 인증·Tool 데모만 실행할 때는 **명시적으로** `--spring.profiles.active=fixture`를 사용하세요. 이 경우 MySQL 검증은 아닙니다.
+   Flyway V7은 `login_accounts` 테이블만 만들며 계정을 자동 등록하거나 기존 비밀번호를 초기화하지 않습니다.
+   API 기동으로 V7 적용을 확인한 뒤, 별도 터미널에서 생성한 해시 SQL을 **의도한 개발 DB에 한 번만** 등록합니다.
+
+   ```sh
+   docker compose --env-file .env exec -T access-db sh -c \
+     'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --user="$MYSQL_USER" "$MYSQL_DATABASE"' \
+     < "${DEMO_DIR:-.dev/demo}/login-accounts.sql"
+   ```
+
+   이 명령은 컨테이너의 전용 앱 계정 환경변수를 사용하며 비밀번호를 명령 인수에 넣지 않습니다. SQL은 평범한 INSERT이므로 중복 계정에서는 실패하고 기존 비밀번호를 덮어쓰지 않습니다.
+   Docker 없이 인증·Tool 데모만 실행할 때는 **명시적으로** `--spring.profiles.active=fixture`를 사용하세요. fixture는 생성한 `login-accounts.json`의 해시와 실제 fixture 사용자 매핑을 검사하며 SQL 등록은 생략합니다. 이 경우 MySQL 검증은 아닙니다.
 
 4. 터미널 B에서 MCP를 시작합니다.
 
@@ -53,10 +65,12 @@ FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실�
    java -jar mcp-server/build/libs/mcp-server-0.1.0.jar
    ```
 
-   **http://127.0.0.1:8080/chat.html** 을 열고 사용자용 `mcp-alice.jwt` 내용을 입력합니다.
+   **http://127.0.0.1:8080/chat.html** 을 열고 질문을 보내거나 **로그인하기**를 누른 뒤 생성한 사용자 이름과 비밀번호를 입력합니다.
+   API가 인증하면 MCP가 자동 연결됩니다. 로그인 전에 적은 질문은 보존되며 연결 후 전송할 수 있습니다. 계정 변경은 **로그아웃** 후 다시 로그인합니다.
    연결 전 활용 안내에서 목적을 고르고, 연결 후 실제 본인 권한 경로와 조회 가능한 카탈로그를 확인할 수 있습니다. 목록에서 관리 대상을 골라도 미리보기와 명시적 실행을 거쳐야 변경됩니다.
    “내 역할은 뭐야?”, “접근 가능한 리소스 알려줘”, “R100에 접근할 수 있어?”를 사용할 수 있습니다.
-   LLM 없는 결정적 질문 분류 데모이며 일반 AI 챗봇이 아닙니다. 관리는 별도 폼에서 대상·동작을 미리 보고 실행 버튼으로만 전송합니다. API 토큰과 개인키를 화면에 넣지 마세요.
+   LLM 없는 결정적 질문 분류 데모이며 일반 AI 챗봇이 아닙니다. 관리는 별도 폼에서 대상·동작을 미리 보고 실행 버튼으로만 전송합니다.
+   수동 JWT 연결은 **개발자용 토큰 연결**에 남아 있습니다. API 토큰과 개인키를 화면에 넣지 마세요.
 
 5. 종료할 때 앱을 `Ctrl+C`로 종료하고 DB는 볼륨을 보존합니다.
 
@@ -194,37 +208,79 @@ COMMIT;
 이 서버는 권한 정의·판정·설명을 제공합니다. 실제 업무 API 트래픽 차단, 요청 본문 검사, 응답 필드 삭제/마스킹을 자동 수행하지 않습니다.
 백오피스/API에서 이 판정 결과를 적용하는 별도 연결이 필요합니다. DENY·조건·만료 정책, 승인 워크플로, 전체 변경 영향 시뮬레이션과 정의 편집 UI는 포함하지 않습니다.
 
-## 두 인증 구간과 신뢰 경계
+## API 로그인과 인증 경로
+
+브라우저는 같은 출처의 `POST /auth/login`에 자격 증명만 보냅니다. MCP는 고정 `POST /api/auth/login`으로 전달하고 **API만** 비밀번호를 검사하고 사용자 토큰을 발급합니다.
+MCP 로그인 relay는 수신한 Authorization·Origin·사용자 헤더를 전달하지 않고 redirect를 따르지 않습니다. 두 로그인 POST만 익명이며 API 업무 경로와 MCP 도구 16개는 계속 인증이 필요합니다.
+
+요청은 `application/json`의 정확한 `{"username":"alice","password":"..."}`입니다. username은 대소문자를 구분하는 ASCII `[A-Za-z0-9_-]{1,64}`, password는 변형하지 않는 1–256 Java 문자입니다.
+추가·중복 JSON 필드, 잘못된 타입, query parameter와 4KiB 초과 본문을 거부합니다. chunked 전송과 인코딩된 로그인 경로에도 같은 본문 제한을 적용합니다.
+
+| 응답 | 내용 |
+|---|---|
+| 200 | `tokenType:"Bearer"`, `expiresIn`, `mcpAccessToken`, `apiAccessToken`, `user:{id,name}` |
+| 400 | `{"code":"INVALID_ARGUMENT"}` |
+| 401 | `{"code":"INVALID_CREDENTIALS"}` — 없는 계정·비활성 계정·잘못된 비밀번호 모두 동일 |
+| 503 | `{"code":"AUTH_UNAVAILABLE"}` — 미등록 fixture 자료·서명키·DB·upstream 실패 등 |
+
+모든 로그인 응답은 `Cache-Control: no-store`이며 성공 본문은 16KiB 이하입니다. 쿠키를 만들지 않습니다. 기존 Host/Origin 위반은 403입니다.
+`expiresIn`은 두 토큰의 실제 `exp-iat`와 같은 초 단위 수명입니다. `auth.token-ttl-seconds` 기본값은 900, 허용 범위는 60–900입니다.
+UI는 MCP 토큰과 만료 시간만 메모리에 유지하고 API 토큰을 앱 상태에 보관하지 않습니다. 로그아웃·만료·401은 토큰과 이전 사용자 결과를 지우며 다시 로그인하도록 안내합니다.
+
+`login_accounts`는 대소문자를 정확히 구분하는 `username VARBINARY(64)` → 고유 `user_id` 매핑, `password_hash`, `enabled`를 저장합니다.
+해시는 `pbkdf2-sha256$600000$<base64url 16바이트 salt>$<base64url 32바이트 hash>`입니다. JDK PBKDF2WithHmacSHA256과 임의 salt, 고정 반복 횟수, 상수 시간 비교를 사용합니다.
+없는 계정도 유효한 dummy 해시로 같은 비용의 검증을 한 번 수행하고 비활성 계정도 비밀번호 검증을 생략하지 않습니다.
+fixture manifest는 정확한 `{username,userId,issuer,subject,passwordHash,enabled}` 객체 배열이며 `enabled:false`를 지원합니다. 실제 fixture 사용자와 매핑이 다르면 로그인은 실패합니다.
+`local-id-demo` 로그인은 JWT subject `local-id-demo`, 로컬 사용자 ID `U900`으로 연결됩니다. username·subject·로컬 ID가 같다고 가정하지 않습니다.
+
+| API 설정 | 기본값 |
+|---|---|
+| `auth.issuer` | `https://demo-issuer.invalid` |
+| `auth.public-key` | `file:${DEMO_DIR:.dev/demo}/issuer-public.pem` |
+| `auth.private-key` | `file:${DEMO_DIR:.dev/demo}/issuer-private.pem` |
+| `auth.fixture-accounts` | `file:${DEMO_DIR:.dev/demo}/login-accounts.json` |
+| `auth.token-ttl-seconds` | `900` |
+
+로그인 자료가 없으면 로그인만 실패하며 이미 구성된 공개키로 검증 가능한 기존 Bearer 경로를 인메모리 인증으로 대체하지 않습니다.
+API는 로그인 시점의 보호된 `SYSTEM_ADMIN` 역할을 조회해 관리자에게만 manage scope를 발급합니다. 발급 후에도 실제 관계 변경마다 현재 DB 관리자 여부를 다시 검사합니다.
+역할을 회수하면 남은 manage scope로 변경할 수 없으며, 새 관리 권한을 받으면 다시 로그인해 manage scope를 받아야 합니다.
+
+### 서로 분리된 서명과 검증
 
 | 구간 | 인증 및 권한 |
 |---|---|
 | 클라이언트 → MCP | RS256·고정 공개키, issuer `https://demo-issuer.invalid`, audience `access-mcp`, 필수 exp/문자열 nonblank sub, 선택 nbf; HTTP `mcp.connect`, 읽기 10개 `authz.read` / 쓰기 6개 `authz.manage` |
+| 클라이언트 → API 직접 호출 | 같은 사용자 issuer·공개키, audience `access-api`, `access.read` / `access.manage`, iat/exp와 최대 900초 수명; `act`·`original_iss` 금지 |
 | MCP → API | 별도 키로 서명한 JWT, issuer `https://demo-delegation.invalid`, audience `access-api`, 고정 `act.sub=access-mcp`, 검증된 `original_iss`, 동작별 고정 scope `access.read` 또는 `access.manage`, 검증된 사용자 sub |
 
+JWT의 단일 `aud`는 [RFC 7519 §4.1.3](https://www.rfc-editor.org/rfc/rfc7519#section-4.1.3)에 따라 문자열 또는 한 항목 배열로 표현할 수 있습니다. 로그인 발급기는 문자열을 사용하며 검증기는 같은 audience 값으로 해석합니다.
 MCP는 Spring Security가 검증한 issuer+subject만 사용합니다. 들어온 Bearer와 임의 act/original_iss/scope/grants를 downstream으로 복사하지 않습니다.
 API 위임 JWT의 만료는 `min(현재+60초, 원래 사용자 토큰의 exp)`입니다. API도 서명·issuer·audience·시간·actor·원issuer·주체 형식과 최대 60초 수명을 확인합니다.
-클라이언트 scope는 Tool 사용 허가일 뿐 **DB의 도메인 권한이 아닙니다**. API는 검증된 원issuer+subject로 사용자를 찾고 본인 역할에서만 경로를 계산합니다.
+API는 두 고정 검증기를 사용하며 검증 전 iss는 검증기 선택에만 사용합니다. 각 검증기가 자신의 공개키·issuer·audience·필수 claim을 독립 검증하고 다른 키로 재시도하지 않습니다.
+`VerifiedCaller`는 Spring이 검증한 JWT에서 직접 호출의 iss+sub 또는 위임 호출의 original_iss+sub를 해석합니다. API 컨트롤러 세 곳 모두 같은 해석을 사용합니다.
+클라이언트 scope는 Tool/API 사용 허가일 뿐 **DB의 도메인 권한이 아닙니다**. API는 검증된 사용자 issuer+subject로 사용자를 찾고 본인 역할에서만 경로를 계산합니다.
 DB identity는 VARBINARY로 정확히 비교하며 trim/lowercase/유니코드 정규화를 하지 않습니다. `X-User-Id`와 UI 선택값은 권한 근거가 아닙니다.
 
 **위임 개인키를 가진 MCP는 사용자 신원을 주장할 수 있는 신뢰 주체입니다.** API는 원래 사용자 JWT 대신 MCP의 별도 서명 주장을 검증합니다.
 이는 로컬 데모 위임이며 정식 OAuth Token Exchange/OBO 구현이 아닙니다. 유효기간 안의 재사용 방지/폐기 목록과 자동 키 회전은 구현하지 않았습니다.
-일반 생성은 클라이언트 발급자 개인키를 저장하지 않습니다. `--fixtures`는 같은 키로 테스트 직전 재서명하기 위해 `fixture-issuer-private.pem`도 저장합니다.
-`delegation-private.pem`은 MCP 서명을 위해 저장됩니다. 두 개인키 모두 backend-only 개발 파일이며 API·FE·JAR·로그에 포함하지 않습니다.
-테스트 fixture만 갱신할 때는 `java tools/DemoCredentials.java <기존fixture디렉터리> --refresh-fixtures`를 사용합니다. 공개키/개인키를 바꾸지 않고 JWT 파일만 원자적으로 교체합니다.
+API만 사용자 서명용 `issuer-private.pem`을 필요로 하고, MCP는 사용자 공개키와 별도의 `delegation-private.pem`을 필요로 합니다.
+`--fixtures`는 같은 키로 검증 JWT를 갱신하기 위한 `fixture-issuer-private.pem`도 저장합니다. 모든 개인키와 로그인 자료는 backend-only 파일이며 FE·JAR·로그에 포함하지 않습니다.
+테스트 fixture만 갱신할 때는 `java tools/DemoCredentials.java <기존fixture디렉터리> --refresh-fixtures`를 사용합니다. 공개키·개인키·비밀번호·계정 해시를 보존하고 JWT 파일만 원자적으로 교체합니다.
 관리 scope는 읽기를 포함하지 않습니다. 관리자 manage-only는 API/Tool 쓰기만, read-only는 전체 카탈로그 조회만 가능합니다.
 UI 관리 미리보기는 인증된 주체를 `get_my_access`로 확인하므로 읽기+쓰기 scope가 필요하며, 전송 후 취소/통신 단절은 rollback을 뜻하지 않습니다.
 
 전송은 **WebMVC + SYNC + stateless Streamable HTTP**(`protocol=STATELESS`)입니다. MCP 세션/로그인 쿠키 없이 요청마다 인증합니다.
 Servlet 동기 경로가 주입된 Spring 보안 프록시를 호출합니다. 단절 시 이미 시작한 읽기는 즉시 취소가 보장되지 않고 downstream 제한 시간까지 남을 수 있습니다.
-직접 Bearer HTTP/같은 출처 UI를 지원하며 OAuth 발견·로그인·보호 자원 메타데이터·자동 토큰 갱신은 미구현입니다.
+로컬 사용자 이름·비밀번호 로그인, 직접 Bearer HTTP와 같은 출처 UI를 지원합니다. 로그아웃은 브라우저 상태만 지우며 이미 발급된 토큰을 서버에서 폐기하지 않습니다.
+SSO·MFA·OAuth 발견/인증 흐름·보호 자원 메타데이터·refresh token·폐기 목록·비밀번호 복구는 구현하지 않았습니다.
 
 ## 안전성 및 데이터 초기화
 
 | 항목 | 구현 |
 |---|---|
-| HTTP 요청 | loopback 바인딩, MCP POST 본문 16KiB 제한(chunked/인코딩 경로 포함), SDK 오류 원문 정제 |
-| downstream | 고정 목적지/경로·GET/PUT/DELETE, redirect 금지, 연결 1초·헤더/본문 2초, 응답 16KiB 제한·DTO 관계 검증 |
-| 브라우저 | GET `/chat.html`, `/chat.js`, `/chat.css`만 공개, 정확한 같은 Origin의 `/mcp` POST만 허용, API는 모든 Origin 거부, CSP self |
+| HTTP 요청 | loopback 바인딩, MCP POST 본문 16KiB·로그인 4KiB 제한(chunked/인코딩 경로 포함), SDK 오류 원문 정제 |
+| downstream | 고정 목적지/경로·GET/PUT/DELETE 및 로그인 전용 POST, redirect 금지, 연결 1초·헤더/본문 2초, 응답 16KiB 제한·DTO 관계 검증 |
+| 브라우저 | GET `/chat.html`, `/chat.js`, `/chat.css` 및 POST `/auth/login` 공개, 정확한 같은 Origin의 `/mcp`·`/auth/login` POST 허용, API는 모든 Origin 거부, CSP self |
 | 오류/로그 | Tool `isError=true` + 고정 코드, 내부 예외·토큰·추가 필드 미노출, 원문을 기록하는 SDK logger 3곳 비활성화 |
 | DB | parameter binding, FK/복합 PK·identity unique/index, Flyway clean 비활성화, schema와 local seed 경로 분리 |
 
@@ -237,7 +293,29 @@ HTTP 인증 실패는 401, 진입 권한 부족은 403입니다. Tool 오류는 
 
 ## 호출과 검증
 
-아래는 `BE/`에서 실행합니다. 토큰은 요청 헤더에만 넣고 출력하지 않습니다.
+아래는 `BE/`에서 실행합니다. 로그인과 직접 API 호출은 다음처럼 같은 프로세스 메모리에서 연결할 수 있습니다. 비밀번호와 두 토큰을 출력하거나 URL·명령 인수에 넣지 않습니다.
+
+```sh
+python3 - <<'PY'
+import json, os, urllib.request
+from pathlib import Path
+directory = Path(os.environ.get('DEMO_DIR', '.dev/demo'))
+passwords = json.loads((directory / 'login-passwords.json').read_text())
+request = urllib.request.Request('http://127.0.0.1:8081/api/auth/login',
+    data=json.dumps({'username': 'alice', 'password': passwords['alice']}).encode(),
+    headers={'Content-Type': 'application/json'}, method='POST')
+with urllib.request.urlopen(request) as response:
+    session = json.load(response)
+request = urllib.request.Request('http://127.0.0.1:8081/api/me',
+    headers={'Authorization': 'Bearer ' + session['apiAccessToken']})
+with urllib.request.urlopen(request) as response:
+    access = json.load(response)
+print(json.dumps({'userId': access['user']['id'],
+                  'resources': [item['id'] for item in access['resources']]}))
+PY
+```
+
+기존 개발용 MCP fixture 토큰으로도 호출할 수 있습니다. 토큰은 요청 헤더에만 넣고 출력하지 않습니다.
 
 ```sh
 MCP_TOKEN="$(cat .dev/demo/mcp-alice.jwt)"
@@ -255,7 +333,7 @@ unset MCP_TOKEN
 
 | 명령 | 실제 검증 범위 |
 |---|---|
-| `./gradlew build` | Java 컴파일·실행 JAR·의존성 해결 |
+| `./gradlew build` | Java 컴파일·JUnit·실행 JAR·의존성 해결 |
 | `./gradlew verify` | 명시 fixture 프로필, 실제 JVM·HTTP·MCP·JWT·메서드 권한·위임·동시 사용자 격리·오류/타임아웃·로그 |
 | `python3 scripts/verify_mysql.py` | Docker DB build/up + local 프로필 통합 검증 2회 + Flyway checksum/history·seed 수 동일성, volume 보존 |
 | 루트의 `node --test FE/tests/chat.test.mjs` | FE 단위 검증(실브라우저 검증과 별개) |
@@ -273,7 +351,46 @@ python3 tests/e2e/verify_context_access.py --profile local \
 필요한 공유 라이브러리가 이미 검색 경로에 있으면 `--mysql-library-path`는 생략할 수 있습니다. 실행 후 자신이 만든 서버·임시 데이터만 정리하며 Docker/기존 volume을 변경하지 않습니다.
 상세 결과는 `BE/test-results/<timestamp>-context-<uuid>/report.json`에 기록됩니다. fixture 결과는 MySQL 검증을 대신하지 않습니다.
 
-### 이번 Page/Endpoint/Field 변경의 검증 — 2026-11-14
+로그인 전용 통합 검증도 실제 API/MCP JAR를 실행합니다. 기본 fixture 실행과 기존 Playwright/Chromium을 사용하는 격리 MySQL·브라우저 실행은 다음과 같습니다.
+
+```sh
+python3 tests/e2e/verify_auth.py --profile fixture
+python3 tests/e2e/verify_auth.py --profile local \
+  --mysql-home /absolute/path/to/extracted/mysql \
+  --mysql-library-path /absolute/path/to/needed/libs \
+  --browser --playwright-module /absolute/path/to/existing/playwright/index.mjs \
+  --chromium /absolute/path/to/chromium
+```
+
+로그인 검증은 새 임시 자격 증명을 생성하고 V7 이후 해시 SQL을 명시 등록합니다. 실제 로그인, 두 audience, 기존 위임, 권한 회수,
+입력·신뢰 경계·오류·비밀정보 비노출을 검사하며 브라우저 선택 시 로그인→채팅→로그아웃→계정 전환을 실제 HTTP로 확인합니다.
+기존 개발 DB나 계정을 재사용하지 않습니다. 브라우저를 요청하지 않은 실행은 브라우저 검증 통과를 의미하지 않습니다.
+
+### 이번 API 로그인 변경의 검증 — 2026-11-14
+
+| 직접 실행한 검증 | 결과 |
+|---|---|
+| Gradle build와 JUnit | 51 PASS — API 19개, MCP 23개, 공통 보안 9개 |
+| 기존 실제 fixture JVM·HTTP·MCP 통합 검증 | 17 PASS |
+| Page/Endpoint/Field 회귀 | fixture 8 PASS + MySQL 전용 1 SKIPPED; 실제 MySQL 9 PASS |
+| 로그인 fixture 통합·실제 로그인 브라우저 | 10 PASS + MySQL 전용 3 SKIPPED |
+| 실제 MySQL 로그인·직접 API·위임·로그인 브라우저·로그 | 12 PASS |
+| 기존 실제 브라우저 회귀 | 9개 범위 확인 — 이전 실행 8개 + 별도 읽기 재실행 1개 |
+| Node 단위 테스트 | 83 PASS — FE 80개, 브라우저 검증 보조 계약 3개 |
+| Python 테스트 실행기 단위 테스트 | 11 PASS |
+
+실제 DB 검증은 격리된 네이티브 MySQL 8.4.13을, 브라우저는 Chromium Headless Shell 151.0.7922.34를 사용했습니다.
+V7의 계정 자동 등록 없음, 생성 해시의 명시 등록, 잘못된·없는·비활성 계정, 두 audience와 서명키 분리, 직접/위임 사용자 매핑,
+관리자 권한 회수, 같은 DB 재시작, 비밀정보 비노출과 로그인→MCP 초기화→채팅→로그아웃→다른 계정 로그인을 확인했습니다.
+로그인 성공과 업무 응답은 실제 HTTP로 확인했으며 브라우저 응답을 가짜 성공으로 대체하지 않았습니다.
+
+최초 실행에서는 기존 읽기 브라우저 검사가 실패했으며, 별도 새 DB 실행에서 읽기 25개 확인과 원문 로그 검사, 총 2개 선택 테스트가 통과했습니다.
+이 재실행에서 나머지 11개 테스트는 선택하지 않았습니다. 이전 실패 보고서도 덮어쓰지 않고 보존했습니다.
+여기에는 R400/R999 거부 결과의 `allowed:false`, `resource:null`, 빈 grants와 거부 UI가 포함됩니다.
+네이티브 로그인 12개와 기존 브라우저 9개 범위는 이 재실행을 포함한 결과이며 단일 13/13 실행으로 집계하지 않습니다.
+이번 검증에서 Docker 경로와 기존 관리 시나리오 전체 38개를 다시 실행하지는 않았습니다. 상세 실행 결과는 로컬 검증 산출물로 보존하며 Git에 포함하지 않습니다.
+
+### 이전 Page/Endpoint/Field 변경의 검증 — 2026-11-14
 
 | 직접 실행한 검증 | 결과 |
 |---|---|
@@ -293,13 +410,13 @@ python3 tests/e2e/verify_context_access.py --profile local \
 
 ### 이전 v2 개발 검증 기록
 
-아래는 기존 README에 남아 있던 이전 실행 기록입니다. 연결된 `BE/test-results/` 파일은 Git에서 제외되어 있으므로 현재 체크아웃의 검증 근거는 위 재실행 결과와 명령을 기준으로 확인합니다.
+아래는 기존 README에 남아 있던 이전 실행 기록입니다. 상세 `BE/test-results/` 파일은 Git에서 제외되어 있으므로 새 체크아웃에서는 위 명령으로 다시 검증합니다.
 
 v2 개발 검증은 17개 통합 테스트(실제 fixture 프로필 JVM·HTTP)와 DTO 검증 JUnit 2개가 통과했습니다. 12개 Tool·관리 상태·scope 조합 회귀를 포함하며 최신 결과 파일에서 재확인할 수 있습니다.
 HTTP 통합 결과는 `BE/build/integration/results.txt`, MySQL 전용 결과는 `BE/build/mysql-verification/`입니다.
 핵심 JWT와 API/MCP 경로는 mock으로 우회하지 않습니다. 지연·redirect·잘못된 응답·outbound 관찰에만 테스트 HTTP 서버를 사용합니다.
-실제 v2 MySQL 변경·감사·동시성·기존 관리 UI는 TESTER의 격리 DB에서 검증했습니다. 핵심 38개 고유 시나리오가 여러 실행에 걸쳐 누적 PASS이며 단일 실행 38 PASS는 아닙니다: [최초 37 PASS·1 BLOCKED](BE/test-results/20261113T164357Z-c01e27c3/summary.md), [후속 5 PASS](BE/test-results/20261113T164713Z-25d8df90/summary.md), [회귀 6 PASS](BE/test-results/20261113T164816Z-fccff2cd/summary.md). 과거 v1·인메모리 결과는 이 MySQL 검증의 근거로 사용하지 않습니다.
-최종 UI 패키지는 [별도 실제 검증 9 PASS 보고서](BE/test-results/20261113T170311Z-14f1c7fe/report.json)로 확인했습니다(FAIL/BLOCKED/SKIPPED 0). 범위는 새 UI 6개(안내·관계·카탈로그·관리·계정 전환·모바일)와 기존 관리 브라우저·결과 불명확 상태·로그 비밀정보 검사 3개입니다. 이 실행은 위 핵심 38개 전체의 재실행이 아닙니다.
+실제 v2 MySQL 변경·감사·동시성·기존 관리 UI의 과거 기록은 핵심 38개 고유 시나리오의 여러 실행에 걸친 누적 PASS이며 단일 실행 38 PASS는 아닙니다. 과거 v1·인메모리 결과는 이 MySQL 검증의 근거로 사용하지 않습니다.
+당시 UI 패키지의 별도 실제 검증은 9 PASS였습니다. 범위는 새 UI 6개(안내·관계·카탈로그·관리·계정 전환·모바일)와 기존 관리 브라우저·결과 미확인 상태·로그 비밀정보 검사 3개입니다. 이 기록도 이번 로그인 변경 또는 핵심 38개 전체의 재실행을 의미하지 않습니다.
 [TESTER 실행 안내](BE/tests/README.md)의 파일 기반 시나리오 38개는 `BE/tests/`, 불변 결과는 `BE/test-results/<run-id>/report.json`과 `summary.md`에 있습니다.
 관리 검증은 `.env.e2e.example`을 바탕으로 별도 `mcp-access-e2e-v2` 프로젝트·DB·volume와 loopback 3308을 사용하며 기존 개발 데이터에 실행하지 않습니다.
 TESTER용 `.env.e2e`에는 예시의 DB 설정 5개만 넣습니다. 프로젝트 이름은 handoff manifest와 `docker compose -p mcp-access-e2e-v2 --env-file .env.e2e`로 지정하고, `DB_PORT=3308`로 개발 DB와 분리합니다.
@@ -326,7 +443,7 @@ Boot BOM이 Flyway 11.7.2와 Connector/J 9.7.0을 선택하며 `gradle.lockfile`
 [MySQL 공식 이미지](https://hub.docker.com/_/mysql), [Flyway MySQL 모듈](https://github.com/flyway/flyway/blob/main/documentation/Reference/Database%20Driver%20Reference/MySQL.md)를 기준으로 구성했습니다.
 
 운영에서는 신뢰할 인증 서버·JWKS 회전, 위임 정책/폐기, backend-only 비밀 저장, 두 구간 HTTPS, 실제 Host/Origin/목적지 allowlist,
-DB TLS와 최소 권한 앱 계정, 필요 시 MCP OAuth 발견/로그인 및 트래픽 제한을 별도로 적용해야 합니다.
+DB TLS와 최소 권한 앱 계정, 필요 시 외부 인증 서버·MCP OAuth 흐름 및 트래픽 제한을 별도로 적용해야 합니다.
 원래 사용자 산출물 `spring-boot-mcp-guide.md`는 보존했으며 현재 계약은 이 README와 실행 코드가 기준입니다.
 
 다음 행동: `cd BE && ./gradlew verify`를 실행하세요.

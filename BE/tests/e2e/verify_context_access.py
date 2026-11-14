@@ -265,11 +265,11 @@ class ContextAccessIntegration(unittest.TestCase):
         history_sql = 'SELECT version,script,checksum,success FROM flyway_schema_history ORDER BY installed_rank;'
         before = db.query(history_sql)
         rows = [row.split('\t') for row in before.splitlines()]
-        self.assertEqual([row[0] for row in rows], ['1', '2', '3', '4', '5', '6'])
+        self.assertEqual([row[0] for row in rows], ['1', '2', '3', '4', '5', '6', '7'])
         self.assertTrue(all(row[-1] == '1' for row in rows))
         counts = {'users': 5, 'roles': 4, 'policies': 14, 'resources': 5, 'user_roles': 4,
                   'role_policies': 16, 'policy_resources': 7, 'access_pages': 2, 'access_endpoints': 1,
-                  'access_fields': 3, 'page_endpoints': 2, 'context_policy_rules': 9}
+                  'access_fields': 3, 'page_endpoints': 2, 'context_policy_rules': 9, 'login_accounts': 0}
         for table, count in counts.items():
             self.assertEqual(int(db.query(f'SELECT COUNT(*) FROM {table};')), count, table)
         self.assertGreater(int(db.query('SELECT COUNT(*) FROM access_audit WHERE actor_user_id=\'admin\' AND success=TRUE;')), 0)

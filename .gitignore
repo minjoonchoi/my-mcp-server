@@ -21,6 +21,9 @@ BE/test-results/
 *.pfx
 *.jks
 *.keystore
+**/login-passwords.json
+**/login-accounts.json
+**/login-accounts.sql
 *.sql.gz
 *.dump
 *.sqlite

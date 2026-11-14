@@ -9,7 +9,7 @@ EXPECTED_COUNTS = {'users':5,'roles':4,'policies':14,'resources':5,'user_roles':
                    'access_pages':2,'access_endpoints':1,'access_fields':3,'page_endpoints':2,'context_policy_rules':9}
 EXPECTED_HISTORY = [('1','V1__access_schema.sql'),('2','V2__local_demo_seed.sql'),
                     ('3','V3__management_schema.sql'),('4','V4__local_management_seed.sql'),
-                    ('5','V5__context_access_schema.sql'),('6','V6__local_context_access_seed.sql')]
+                    ('5','V5__context_access_schema.sql'),('6','V6__local_context_access_seed.sql'),('7','V7__login_accounts_schema.sql')]
 
 def parse_snapshot(text):
     counts, history = {}, []

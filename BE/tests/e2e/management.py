@@ -439,13 +439,14 @@ class Management:
 
     def seed(self):
         expected = {'users': 5, 'roles': 4, 'policies': 14, 'resources': 5, 'user_roles': 4, 'role_policies': 16, 'policy_resources': 7,
-                    'access_pages': 2, 'access_endpoints': 1, 'access_fields': 3, 'page_endpoints': 2, 'context_policy_rules': 9}
+                    'access_pages': 2, 'access_endpoints': 1, 'access_fields': 3, 'page_endpoints': 2, 'context_policy_rules': 9,
+                    'login_accounts': 0}
         counts = {}
         for table in expected:
             counts[table] = int(self.ctx.database('SELECT COUNT(*) FROM ' + table + ';').strip())
         assert counts == expected, 'v2 exact seed count mismatch: ' + str(counts)
         history = [row.split('\t') for row in self.ctx.database('SELECT version,script,checksum,success FROM flyway_schema_history ORDER BY installed_rank;').splitlines()]
-        assert [row[0] for row in history] == ['1', '2', '3', '4', '5', '6']
+        assert [row[0] for row in history] == ['1', '2', '3', '4', '5', '6', '7']
         assert all(row[3] == '1' for row in history)
         return {'counts': counts, 'history': history, 'audit_rows_existing': len(self.audit_rows())}
 
