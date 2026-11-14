@@ -1,7 +1,7 @@
-# 사용자 권한 조회·관리를 제공하는 Spring AI MCP 데모
+# 페이지·엔드포인트·필드 권한을 조회·관리하는 Spring AI MCP 데모
 
 **`cd BE && ./gradlew verify`** 로 실제 MCP·API·JWT 통합 검증을 실행합니다.
-Java 21, Python 3, 첫 빌드의 의존성 다운로드가 필요합니다. MySQL 실행에는 Docker Compose가 필요합니다.
+JDK 21, Python 3, 첫 빌드의 의존성 다운로드가 필요합니다. 기본 로컬 MySQL 실행은 Docker Compose를 사용하며, 격리 통합 테스트는 별도로 준비한 MySQL 바이너리로도 실행할 수 있습니다.
 FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실행 명령은 `BE/` 기준입니다.
 
 ## 실행
@@ -80,7 +80,7 @@ FE 원본과 사용법은 [FE/README.md](FE/README.md), 백엔드 소스와 실�
 | `attach_resource_to_policy`, `detach_resource_from_policy` | `PUT/DELETE /api/manage/policies/{policyId}/resources/{resourceId}` | 정책–리소스 관계 변경 |
 
 `resourceId`는 `^R[0-9]{3}$`, `concept`는 `overview/permission/role/policy/resource`만 허용합니다.
-12개 Tool 모두 추가 인수를 거부합니다. `entity`는 users/roles/policies/resources, 일반 대상 ID는 `[A-Za-z0-9_-]{1,64}`입니다.
+기존 12개와 페이지 맥락 조회 4개를 합친 16개 Tool 모두 추가 인수를 거부합니다. `entity`는 users/roles/policies/resources, 일반 대상 ID는 `[A-Za-z0-9_-]{1,64}`입니다.
 관리의 `userId` 등은 변경 대상이며 인증 주체가 아닙니다. URL·임의 헤더·메서드를 받는 Tool은 없습니다.
 성공 결과는 `structuredContent`와 호환 JSON text를 함께 제공합니다.
 
@@ -109,11 +109,96 @@ API는 보호 시스템 역할 행을 잠금 기준으로 사용해 작은 데�
 `access_audit`에는 검증된 actor issuer/subject/local ID·동작·대상·시간·success/changed를 저장합니다. 감사 INSERT 실패도 관계 변경과 함께 rollback됩니다.
 fixture 프로필의 관계 변경은 메모리 상태만 검증하며 **영속 감사 기록의 근거가 아닙니다**.
 
+## Page · Endpoint · Field 정책
+
+백오피스 접근 대상을 세 가지 유형으로 등록하고, 사용자의 역할에 부여된 정책으로 **같은 페이지 맥락**의 접근을 평가합니다.
+
+| 정의 테이블 | 저장하는 내용 |
+|---|---|
+| `access_pages` | 어드민 application, 페이지 path, 이름 |
+| `access_endpoints` | service, HTTP method, API path, 이름 |
+| `access_fields` | 소속 endpoint, REQUEST/RESPONSE, PATH/QUERY/HEADER/BODY 위치, 필드 경로 |
+| `page_endpoints` | 페이지에서 사용하는 엔드포인트 관계. 등록 자체는 권한이 아님 |
+| `context_policy_rules` | 기존 policy의 PAGE/ENDPOINT/FIELD 유형과 정확한 page/endpoint/field 대상 |
+
+정책은 기존 `policies`에 등록하고 기존 `role_policies`로 역할에 부여합니다. 한 정책은 하나의 유형과 대상을 가지며 역할에 여러 정책을 묶을 수 있습니다.
+PAGE는 해당 페이지 허용이 필요합니다. ENDPOINT는 페이지 허용, 사용 관계 등록, 해당 페이지·엔드포인트 정책이 모두 필요합니다.
+FIELD는 여기에 해당 페이지·엔드포인트·필드 정책이 추가로 필요합니다. 다른 페이지의 정책, 요청 필드의 허용, 상위 리소스 허용이 응답 필드 허용으로 전파되지 않습니다.
+사용자가 가진 여러 역할의 허용은 각 단계에서 합쳐 평가하며, 근거는 실제 역할·정책 ID로 반환합니다. 관리자 역할만으로 업무 페이지 접근을 우회하지 않습니다.
+
+기존 `resources`/`policy_resources`의 `R###` 계약은 유지됩니다. 새로운 유형의 ID는 그 목록에 섞이지 않으며 기존 리소스 허용도 유형별 정책 평가에 사용되지 않습니다.
+유형별 정책에는 일반 `policy_resources`를 함께 설정하지 마세요. 기존 `attach_resource_to_policy`/`detach_resource_from_policy`는 유형별 정책을 `INVALID_ARGUMENT`로 거부합니다.
+기존 역할 부여·회수와 역할–정책 추가·해제 도구는 유형별 정책에도 적용되며, 다음 조회부터 실제 권한이 달라집니다. MySQL에서는 기존 트랜잭션·감사 기록을 그대로 사용합니다.
+
+| MCP 도구 | API GET | 인수 |
+|---|---|---|
+| `list_my_pages` | `/api/me/pages` | 선택: `after`, `limit` |
+| `list_my_page_endpoints` | `/api/me/pages/{pageId}/endpoints` | `pageId`; 선택: `after`, `limit` |
+| `list_my_endpoint_fields` | `/api/me/pages/{pageId}/endpoints/{endpointId}/fields` | `pageId`, `endpointId`, `direction` (`REQUEST`/`RESPONSE`); 선택: `after`, `limit` |
+| `check_my_context_access` | `/api/me/context-access` | `targetType`, `pageId`; ENDPOINT/FIELD는 `endpointId`, FIELD는 `fieldId`도 필수 |
+
+모두 `authz.read`/`access.read`가 필요한 본인 조회입니다. 인증 주체를 입력으로 받지 않습니다.
+목록은 ID 순서로 최대 5개를 반환하고, 다음 페이지가 있을 때 `nextCursor`를 제공합니다. 다음 요청의 `after`에 그 값을 넣습니다.
+부모 페이지나 엔드포인트를 볼 수 없으면 존재 여부와 관계없이 동일 `404 NOT_FOUND`입니다. 볼 수 있는 부모에 허용된 하위 항목이 없으면 빈 목록을 반환합니다.
+API의 알 수 없는·중복 query parameter, 도구의 추가 인수, 잘못된 ID·타입·조건 조합은 거부합니다.
+
+접근 확인은 `allowed`, `reason`, `stages`를 반환합니다. `reason`은 `ALLOWED`, `PAGE_NOT_GRANTED`, `ENDPOINT_NOT_GRANTED`, `FIELD_NOT_GRANTED`이며 첫 거부 단계에서 평가 결과 설명을 끝냅니다.
+이 응답으로 접근 확인, 허용 근거 설명, 부족한 단계 확인을 함께 수행합니다. 거부된 대상의 이름·경로·숨겨진 정책은 공개하지 않습니다.
+각 성공 단계의 `grants`에는 역할·정책 근거를 최대 5개 제공하고, 그 이상은 `grantsTruncated:true`로 표시합니다. 실제 판정은 모든 해당 근거를 사용합니다.
+등록 정보는 ID 64자, 경로 200 ASCII 문자, 이름 80 Java 문자 이하로 제한하며 목록/근거 제한과 함께 downstream 16KiB 응답 제한을 지킵니다.
+
+예를 들어 Alice는 `page-customers`와 `page-audit`에서 같은 `endpoint-customer-get`을 호출할 수 있습니다.
+고객 페이지에서는 응답 `name`만 허용되고, 감사 페이지에서는 `name`과 `email`이 허용됩니다. 감사 페이지의 PAGE/ENDPOINT 정책은 `role-editor`, `email` FIELD 정책은 `role-analyst`에서 부여되어 역할 합성을 검증합니다.
+Bob, Carol, `local-id-demo`, `admin`은 초기 상태에서 유형별 업무 페이지 권한이 없습니다. `fixture`와 `local` 데이터는 같은 예제를 제공합니다.
+
+```json
+{"name":"list_my_pages","arguments":{"limit":5}}
+{"name":"list_my_endpoint_fields","arguments":{"pageId":"page-audit","endpointId":"endpoint-customer-get","direction":"RESPONSE"}}
+{"name":"check_my_context_access","arguments":{"targetType":"FIELD","pageId":"page-customers","endpointId":"endpoint-customer-get","fieldId":"field-customer-email-response"}}
+```
+
+위 객체를 기존 `tools/call` 요청의 `params`로 사용합니다. 마지막 예제는 `FIELD_NOT_GRANTED`입니다. `pageId`만 `page-audit`로 바꾸면 허용되며 세 단계의 근거를 받습니다.
+현재 HTML 채팅 UI는 기존 12개 도구 흐름을 유지합니다. 추가 도구는 MCP 클라이언트 또는 직접 MCP 요청으로 사용합니다.
+
+### 정의 등록과 정책 부여
+
+V5는 스키마만 추가하고 V6는 `local` 프로필의 예제 데이터만 추가합니다. 이미 적용한 V1–V4를 수정하거나 기존 데이터를 초기화하지 않습니다.
+운영 정의는 별도 migration/관리용 DB 계정으로 아래와 같은 **검토된 명시적 SQL 트랜잭션**을 적용합니다. 임의 SQL을 실행하는 API/MCP 도구는 없습니다.
+새로운 정의는 아직 사용자에게 권한을 주지 않습니다. FK는 페이지 사용 관계와 필드의 엔드포인트 소속을 검사하고 CHECK는 유형별 대상 조합·메타데이터 제한을 검사합니다.
+
+```sql
+START TRANSACTION;
+INSERT INTO access_pages (id,application,path,name)
+VALUES ('page-orders','backoffice','/admin/orders','Orders');
+INSERT INTO access_endpoints (id,service,method,path,name)
+VALUES ('endpoint-orders-get','order-api','GET','/orders/{id}','Get order');
+INSERT INTO access_fields (id,endpoint_id,direction,location,field_path,name)
+VALUES ('field-order-number-response','endpoint-orders-get','RESPONSE','BODY','number','Order number');
+INSERT INTO page_endpoints (page_id,endpoint_id)
+VALUES ('page-orders','endpoint-orders-get');
+INSERT INTO policies (id,name,description,protected) VALUES
+('ctx-page-orders','Orders page','Orders page access',FALSE),
+('ctx-endpoint-orders','Orders endpoint','Orders page API access',FALSE),
+('ctx-field-order-number','Order number','Order number output access',FALSE);
+INSERT INTO context_policy_rules (policy_id,kind,page_id,endpoint_id,field_id) VALUES
+('ctx-page-orders','PAGE','page-orders',NULL,NULL),
+('ctx-endpoint-orders','ENDPOINT','page-orders','endpoint-orders-get',NULL),
+('ctx-field-order-number','FIELD','page-orders','endpoint-orders-get','field-order-number-response');
+COMMIT;
+```
+
+이후 권한 있는 관리자가 기존 `attach_policy_to_role` 도구로 필요한 정책 각각을 실제 업무 역할에 부여합니다.
+예: `{"roleId":"role-analyst","policyId":"ctx-page-orders"}`를 부여한 뒤 엔드포인트·필드 정책도 각각 부여해야 주문 번호를 조회할 수 있습니다.
+정의를 바꾸는 migration에서도 기존 policy를 `policy_resources`와 유형별 규칙 양쪽에 겸용하지 않고, 기존 참조 관계와 영향 사용자를 검토합니다.
+
+이 서버는 권한 정의·판정·설명을 제공합니다. 실제 업무 API 트래픽 차단, 요청 본문 검사, 응답 필드 삭제/마스킹을 자동 수행하지 않습니다.
+백오피스/API에서 이 판정 결과를 적용하는 별도 연결이 필요합니다. DENY·조건·만료 정책, 승인 워크플로, 전체 변경 영향 시뮬레이션과 정의 편집 UI는 포함하지 않습니다.
+
 ## 두 인증 구간과 신뢰 경계
 
 | 구간 | 인증 및 권한 |
 |---|---|
-| 클라이언트 → MCP | RS256·고정 공개키, issuer `https://demo-issuer.invalid`, audience `access-mcp`, 필수 exp/문자열 nonblank sub, 선택 nbf; HTTP `mcp.connect`, 읽기 6개 `authz.read` / 쓰기 6개 `authz.manage` |
+| 클라이언트 → MCP | RS256·고정 공개키, issuer `https://demo-issuer.invalid`, audience `access-mcp`, 필수 exp/문자열 nonblank sub, 선택 nbf; HTTP `mcp.connect`, 읽기 10개 `authz.read` / 쓰기 6개 `authz.manage` |
 | MCP → API | 별도 키로 서명한 JWT, issuer `https://demo-delegation.invalid`, audience `access-api`, 고정 `act.sub=access-mcp`, 검증된 `original_iss`, 동작별 고정 scope `access.read` 또는 `access.manage`, 검증된 사용자 sub |
 
 MCP는 Spring Security가 검증한 issuer+subject만 사용합니다. 들어온 Bearer와 임의 act/original_iss/scope/grants를 downstream으로 복사하지 않습니다.
@@ -174,6 +259,41 @@ unset MCP_TOKEN
 | `./gradlew verify` | 명시 fixture 프로필, 실제 JVM·HTTP·MCP·JWT·메서드 권한·위임·동시 사용자 격리·오류/타임아웃·로그 |
 | `python3 scripts/verify_mysql.py` | Docker DB build/up + local 프로필 통합 검증 2회 + Flyway checksum/history·seed 수 동일성, volume 보존 |
 | 루트의 `node --test FE/tests/chat.test.mjs` | FE 단위 검증(실브라우저 검증과 별개) |
+
+추가 Page/Endpoint/Field 검증은 빌드된 JAR와 PATH의 JDK 21을 사용합니다. 아래는 `BE/` 기준입니다.
+
+```sh
+python3 tests/e2e/verify_context_access.py --profile fixture
+python3 tests/e2e/verify_context_access.py --profile local \
+  --mysql-home /absolute/path/to/extracted/mysql \
+  --mysql-library-path /absolute/path/to/needed/libs
+```
+
+두 번째 명령은 개발 DB를 사용하지 않고 소유한 임시 디렉터리·loopback 포트·전용 앱 계정으로 격리 MySQL을 실행합니다.
+필요한 공유 라이브러리가 이미 검색 경로에 있으면 `--mysql-library-path`는 생략할 수 있습니다. 실행 후 자신이 만든 서버·임시 데이터만 정리하며 Docker/기존 volume을 변경하지 않습니다.
+상세 결과는 `BE/test-results/<timestamp>-context-<uuid>/report.json`에 기록됩니다. fixture 결과는 MySQL 검증을 대신하지 않습니다.
+
+### 이번 Page/Endpoint/Field 변경의 검증 — 2026-11-14
+
+| 직접 실행한 검증 | 결과 |
+|---|---|
+| Gradle build와 JUnit | 30 PASS — API 11개, MCP 19개(기존 2개 포함) |
+| 기존 실제 fixture JVM·HTTP·MCP 통합 검증 | 17 PASS |
+| 새 맥락 권한 fixture API·MCP 검증 | 8 PASS, MySQL 전용 검사 1 SKIPPED; FAIL/BLOCKED 0 |
+| 격리된 실제 MySQL 8.4.13 API·MCP 검증 | 9 PASS; FAIL/BLOCKED/SKIPPED 0 |
+| FE·브라우저 검증 보조 로직 Node 단위 테스트 | 67 PASS |
+| Python 테스트 실행기 단위 테스트 | 11 PASS |
+
+실제 MySQL 검증은 네이티브 바이너리와 새 임시 DB를 사용했습니다. Flyway V1–V6, JDBC/API/MCP 결과 일치,
+기존 감사 트랜잭션을 통한 정책 변경의 즉시 반영, FK·유형 조합·공백/개행/기본 무시 Unicode 문자 제약,
+동일 DB에서의 API 재시작과 데이터 보존을 확인했습니다. Docker 경로와 기존 v2 관리 시나리오 전체 38개는 이번 실행 범위에 포함하지 않았습니다.
+재실행 시 위 명령과 `node --test FE/tests/chat.test.mjs BE/tests/e2e/browser_contract.test.mjs`,
+`python3 -m unittest discover -s BE/tests/e2e -p test_runner.py`를 사용합니다(마지막 두 명령은 저장소 루트 기준).
+상세 실행 결과 디렉터리는 로컬 검증 산출물이며 Git에 포함하지 않습니다.
+
+### 이전 v2 개발 검증 기록
+
+아래는 기존 README에 남아 있던 이전 실행 기록입니다. 연결된 `BE/test-results/` 파일은 Git에서 제외되어 있으므로 현재 체크아웃의 검증 근거는 위 재실행 결과와 명령을 기준으로 확인합니다.
 
 v2 개발 검증은 17개 통합 테스트(실제 fixture 프로필 JVM·HTTP)와 DTO 검증 JUnit 2개가 통과했습니다. 12개 Tool·관리 상태·scope 조합 회귀를 포함하며 최신 결과 파일에서 재확인할 수 있습니다.
 HTTP 통합 결과는 `BE/build/integration/results.txt`, MySQL 전용 결과는 `BE/build/mysql-verification/`입니다.

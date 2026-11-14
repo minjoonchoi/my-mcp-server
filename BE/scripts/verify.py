@@ -207,7 +207,8 @@ class Integration(unittest.TestCase):
         self.assertFalse(any(k.lower()=='mcp-session-id' for k in headers))
         self.assertEqual(request(self.mcp, '/mcp', self.tokens['mcp-alice'], {'jsonrpc':'2.0','method':'notifications/initialized'})[0],202)
         tools = rpc(self.mcp,self.tokens['mcp-alice'],'tools/list')[2]['result']['tools']
-        self.assertEqual({t['name'] for t in tools}, {'get_my_access','check_my_resource_access','explain_authorization','list_access_entities','get_access_entity','get_requestable_roles','assign_role_to_user','remove_role_from_user','attach_policy_to_role','detach_policy_from_role','attach_resource_to_policy','detach_resource_from_policy'})
+        self.assertEqual({t['name'] for t in tools}, {'get_my_access','check_my_resource_access','explain_authorization','list_access_entities','get_access_entity','get_requestable_roles','assign_role_to_user','remove_role_from_user','attach_policy_to_role','detach_policy_from_role','attach_resource_to_policy','detach_resource_from_policy',
+                'list_my_pages','list_my_page_endpoints','list_my_endpoint_fields','check_my_context_access'})
         for tool in tools:
             write=tool['name'].startswith(('assign_','remove_','attach_','detach_'))
             self.assertEqual(tool['annotations']['readOnlyHint'],not write)

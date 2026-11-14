@@ -5,9 +5,11 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_COUNTS = {'users':5,'roles':4,'policies':5,'resources':5,'user_roles':4,'role_policies':7,'policy_resources':7}
+EXPECTED_COUNTS = {'users':5,'roles':4,'policies':14,'resources':5,'user_roles':4,'role_policies':16,'policy_resources':7,
+                   'access_pages':2,'access_endpoints':1,'access_fields':3,'page_endpoints':2,'context_policy_rules':9}
 EXPECTED_HISTORY = [('1','V1__access_schema.sql'),('2','V2__local_demo_seed.sql'),
-                    ('3','V3__management_schema.sql'),('4','V4__local_management_seed.sql')]
+                    ('3','V3__management_schema.sql'),('4','V4__local_management_seed.sql'),
+                    ('5','V5__context_access_schema.sql'),('6','V6__local_context_access_seed.sql')]
 
 def parse_snapshot(text):
     counts, history = {}, []

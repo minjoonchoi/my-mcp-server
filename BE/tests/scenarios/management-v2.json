@@ -72,7 +72,7 @@
     "expected": {
       "http": "200 for successful requests; fixed 401/403/404/400 for specified rejections",
       "rpc": "StructuredContent equals JSON text; exact schemas and safe errors",
-      "domain": "users5 roles4 policies5 resources5 joins4/7/7; migration checksums recorded",
+      "domain": "users5 roles4 policies14 resources5 joins4/16/7; contextual pages2 endpoints1 fields3 bindings2 rules9; V1-V6 migration checksums recorded",
       "error": "No unexpected error; rejection must match exact handler assertions"
     }
   },

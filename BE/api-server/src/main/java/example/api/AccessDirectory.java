@@ -71,6 +71,23 @@ public class AccessDirectory implements AccessRepository {
         roles.put("SYSTEM_ADMIN",new Role("SYSTEM_ADMIN","시스템 관리자","DB 관리 권한의 보호된 시작점",List.of("SYSTEM_POLICY")));
         policies.put("SYSTEM_POLICY",new PolicyDefinition("SYSTEM_POLICY","시스템 정책","보호된 시스템 정책",List.of("R900")));
         resources.put("R900",new Resource("R900","시스템 리소스","보호된 시스템 리소스"));
+        for (String policyId : ContextFixtures.policyIds())
+            policies.put(policyId, new PolicyDefinition(policyId, policyId, "Page-scoped authorization rule", List.of()));
+        ContextFixtures.ROLE_POLICIES.forEach((roleId, policyIds) -> {
+            Role role = roles.get(roleId);
+            var combined = new TreeSet<>(role.policyIds());
+            combined.addAll(policyIds);
+            roles.put(roleId, new Role(role.id(), role.name(), role.description(), List.copyOf(combined)));
+        });
+    }
+
+    /** Snapshot effective assignments under the same monitor used by relationship changes. */
+    synchronized ContextSnapshot contextSnapshot(String issuer, String subject) {
+        User user = users.get(new Identity(issuer, subject));
+        if (user == null) throw new ApiProblem(403, "FORBIDDEN");
+        var assignments = user.roleIds().stream().flatMap(roleId -> roles.get(roleId).policyIds().stream()
+                .map(policyId -> new example.contract.ContextAccessResponses.Grant(roleId, policyId))).toList();
+        return ContextFixtures.snapshot(assignments);
     }
     private boolean admin(User user) { return user.roleIds().contains("SYSTEM_ADMIN"); }
     private boolean protectedId(String entity,String id) {
@@ -116,6 +133,8 @@ public class AccessDirectory implements AccessRepository {
         String left=targets.get(relation.leftKey()),right=targets.get(relation.rightKey());
         if (protectedId(relation.leftTable(),left) || protectedId(relation.rightTable(),right)) throw new ApiProblem(403,"FORBIDDEN");
         if (!exists(relation.leftTable(),left) || !exists(relation.rightTable(),right)) throw new ApiProblem(404,"NOT_FOUND");
+        if (relation.table().equals("policy_resources") && ContextFixtures.contextualPolicy(left))
+            throw new ApiProblem(400, "INVALID_ARGUMENT");
         List<String> affected;
         boolean changed;
         if (relation.table().equals("user_roles")) {
