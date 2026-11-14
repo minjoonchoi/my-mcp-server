@@ -28,7 +28,8 @@ try {
     let chromium;
     try {
       ({ chromium } = await import(pathToFileURL(process.env.E2E_PLAYWRIGHT_MODULE).href));
-      browser = await chromium.launch({ channel: 'chrome', headless: true });
+      browser = await chromium.launch({ headless: true, ...(process.env.E2E_CHROMIUM_EXECUTABLE
+        ? { executablePath: process.env.E2E_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : { channel: 'chrome' }) });
     } catch {
       console.log(JSON.stringify({ status: 'BLOCKED', reason: 'Existing Chrome/Playwright unavailable', mode }));
     }
@@ -60,6 +61,8 @@ try {
       };
       const connect = async (name, keyboard = false) => {
         stage = 'connect-' + name;
+        if (await page.locator('#login-dialog').isVisible()) await page.locator('#login-cancel').click();
+        if (!await page.locator('.advanced-connection').evaluate(element => element.open)) await page.locator('.advanced-connection > summary').click();
         await page.locator('#token').fill(await fixture(name));
         if (keyboard) { await page.locator('#token').press('Tab'); await page.keyboard.press('Enter'); }
         else await page.locator('#connect').click();
@@ -137,7 +140,9 @@ try {
           assert.ok(await control(key).isVisible());
           if (await control(key).isEnabled()) {
             await control(key).click();
-            assert.ok(await page.locator('#token').evaluate(element => document.activeElement === element));
+            await page.locator('#login-dialog').waitFor({ state: 'visible' });
+            assert.ok(await page.locator('#login-username').evaluate(element => document.activeElement === element));
+            await page.locator('#login-cancel').click();
           }
         }
         assert.equal(mutations(), 0);

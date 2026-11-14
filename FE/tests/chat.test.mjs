@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../chat.js', import.meta.url), 'utf8');
-const { classifyQuestion, catalogResult, requestableResult, managementArgs, mutationResult, rpcResult, toolData, accessResult, resourceResult, conceptResult, resolveResourceName, validateTools, accessText, readResponse } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const { classifyQuestion, catalogResult, requestableResult, managementArgs, mutationResult, rpcResult, toolData, accessResult, resourceResult, conceptResult, resolveResourceName, validateTools, accessText, readResponse, loginResult, readLoginResponse } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const asTool = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }], isError: false });
 const pair = (roleId, policyId) => ({ roleId, policyId });
 const alice = () => ({
@@ -191,7 +191,7 @@ test('unsupported MIME cancels an open response body without reading or exposing
 
 // Minimal DOM + fake transport: unit evidence only, never live MCP/browser evidence.
 class Element {
-  constructor() { this.value = ''; this.disabled = false; this.hidden = false; this.textContent = ''; this.dataset = {}; this.children = []; this.handlers = {}; }
+  constructor() { this.value = ''; this.disabled = false; this.hidden = false; this.open = false; this.textContent = ''; this.dataset = {}; this.children = []; this.handlers = {}; }
   addEventListener(type, fn) { this.handlers[type] = fn; }
   dispatch(type) { return this.handlers[type]?.({ preventDefault() {} }); }
   append(...children) { this.children.push(...children); }
@@ -200,21 +200,25 @@ class Element {
   setAttribute(name, value) { this.attributes ??= {}; this.attributes[name] = value; }
   scrollIntoView() {}
   focus() { this.focusCount = (this.focusCount || 0) + 1; }
+  showModal() { this.open = true; this.showCount = (this.showCount || 0) + 1; }
+  close() { this.open = false; this.dispatch('close'); }
   get text() { return this.textContent + this.children.map(child => child.text).join(''); }
 }
 function harness() {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const examples = [new Element(), new Element()]; examples[0].dataset.query = '내 역할은 뭐야?'; examples[1].dataset.query = '접근 가능한 리소스 알려줘';
-  const calls = [], timers = new Map(); let timerId = 0;
+  const calls = [], timers = new Map(), timerDelays = new Map(); let timerId = 0, now = Date.now();
   const win = new Element();
   const context = vm.createContext({
     document: { getElementById: get, createElement: () => new Element(), querySelectorAll: () => examples }, window: win,
-    AbortController, TextDecoder, setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id),
+    AbortController, TextDecoder, Date: class extends Date { static now() { return now; } },
+    setTimeout: (fn, delay) => { const id = ++timerId; timers.set(id, fn); timerDelays.set(id, delay); return id; },
+    clearTimeout: id => { timers.delete(id); timerDelays.delete(id); },
     fetch: (url, options) => new Promise((resolve, reject) => calls.push({ url, options, body: JSON.parse(options.body), resolve, reject })),
   });
   vm.runInContext(source.replace(/^export /gm, ''), context);
-  return { get, calls, timers, win, examples, text: () => get('messages').text };
+  return { get, calls, timers, timerDelays, win, examples, advance: ms => { now += ms; }, text: () => get('messages').text };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function answer(call, result) { call.resolve(response(payload(call.body.id, result))); }
@@ -558,13 +562,13 @@ test('mutation refresh rejects different actor-local-ID data and does not render
   assert.equal(h.calls.length, count); assert.equal(h.text().includes('Bob'), false); assert.ok(h.get('manage-status').textContent.includes('최신 상태를 확인하지 못했습니다'));
 });
 
-test('discovery guidance works before connection: every purpose prompts token focus without a request', async () => {
+test('discovery guidance works before connection: every purpose opens login without a request', async () => {
   const h = harness();
   for (const id of ['discover-own', 'discover-browse', 'discover-requestable', 'discover-manage', 'discover-concept', 'manage-load-targets']) {
     assert.equal(h.get(id).disabled, false); await h.get(id).dispatch('click');
-    assert.equal(h.calls.length, 0); assert.ok(h.get('discovery-status').textContent.includes('연결하기'));
+    assert.equal(h.calls.length, 0); assert.ok(h.get('discovery-status').textContent.includes('로그인')); assert.equal(h.get('login-dialog').open, true);
   }
-  assert.equal(h.get('token').focusCount, 6); assert.equal(mutationCount(h), 0);
+  assert.equal(h.get('login-username').focusCount, 6); assert.equal(mutationCount(h), 0);
 });
 test('own-access guide renders all verified provenance paths, summary, empty state and result focus', async () => {
   const h = harness(); await connect(h);
@@ -716,4 +720,166 @@ test('relationship disclosure retains native Tab focus and Enter/Space activatio
   const h = harness(); await connect(h); await show(h, '내 정보 알려줘', accessTool());
   assert.equal(h.get('relationship-view').hidden, false); assert.ok(!h.get('relationship-view').open);
   // Native key behavior is verified by TESTER with Tab/Enter/Space, without direct focus calls.
+});
+
+const loginData = (token = 'unit-mcp.payload.signature', expiresIn = 900) => ({
+  tokenType: 'Bearer', expiresIn, mcpAccessToken: token, apiAccessToken: 'unit-api.payload.signature',
+  user: { id: 'U900', name: 'LOGIN_METADATA_ONLY' },
+});
+function startLogin(h, username = 'alice', password = 'unit-password') {
+  h.get('login-open').dispatch('click'); h.get('login-username').value = username; h.get('login-password').value = password;
+  return h.get('login-form').dispatch('submit');
+}
+async function finishLogin(h, done, data = loginData()) {
+  h.calls.at(-1).resolve(response(data)); await tick();
+  assert.equal(h.calls.at(-1).body.method, 'initialize');
+  answer(h.calls.at(-1), { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'test' } }); await tick();
+  h.calls.at(-1).resolve(new Response(null, { status: 202 })); await tick(); answer(h.calls.at(-1), toolList()); await done;
+}
+async function login(h, data = loginData()) { const done = startLogin(h); await finishLogin(h, done, data); }
+function expireLogin(h) {
+  const id = [...h.timerDelays].find(([, delay]) => delay > 12000)?.[0];
+  assert.ok(id); h.advance(h.timerDelays.get(id)); h.timers.get(id)();
+}
+
+test('login DTO validates actual bounded lifetime and keeps only MCP token and expiry inputs', () => {
+  for (const lifetime of [60, 300, 900]) assert.deepEqual(loginResult(loginData(undefined, lifetime)), { mcpAccessToken: 'unit-mcp.payload.signature', expiresIn: lifetime });
+  for (const mutate of [value => { value.expiresIn = 59; }, value => { value.expiresIn = 901; }, value => { value.expiresIn = 60.5; },
+    value => { value.expiresIn = '900'; }, value => { value.tokenType = 'Basic'; }, value => { value.role = 'SYSTEM_ADMIN'; },
+    value => { value.user.role = 'SYSTEM_ADMIN'; }, value => { value.user.id = '../wrong'; }, value => { value.user.name = ''; },
+    value => { value.mcpAccessToken = value.apiAccessToken; }, value => { value.mcpAccessToken = 'not a token'; },
+    value => { value.mcpAccessToken += '\n'; }, value => { value.apiAccessToken += '\n'; }, value => { value.user.id += '\n'; }, value => { delete value.apiAccessToken; }]) {
+    const value = loginData(); mutate(value); fails(() => loginResult(value), 'LOGIN_PROTOCOL');
+  }
+});
+test('login response rejects unbounded bodies, invalid MIME/status and raw server error details', async () => {
+  assert.deepEqual(await readLoginResponse(response(loginData())), loginResult(loginData()));
+  for (const [status, code, error] of [[400, 'INVALID_ARGUMENT', 'LOGIN_INPUT'], [401, 'INVALID_CREDENTIALS', 'LOGIN_CREDENTIALS'], [503, 'AUTH_UNAVAILABLE', 'LOGIN_UNAVAILABLE']]) {
+    await assert.rejects(readLoginResponse(new Response(JSON.stringify({ code }), { status, headers: { 'Content-Type': 'application/json' } })), failure => failure.code === error);
+  }
+  for (const value of [new Response('SECRET_SERVER_DETAIL', { status: 401 }), new Response(JSON.stringify({ code: 'UNKNOWN_USER', detail: 'SECRET' }), { status: 401, headers: { 'Content-Type': 'application/json' } }), response({ ...loginData(), pad: 'x'.repeat(16384) }), new Response('<html>SECRET</html>'), response([])]) {
+    await assert.rejects(readLoginResponse(value), failure => failure.code === 'LOGIN_PROTOCOL' && !failure.message.includes('SECRET'));
+  }
+  await assert.rejects(readLoginResponse(new Response('SECRET', { status: 500 })), failure => failure.code === 'LOGIN_UNAVAILABLE');
+});
+test('logged-out chat is usable, preserves its draft and opens native login without MCP traffic', async () => {
+  const h = harness(); assert.equal(h.get('query').disabled, false); assert.equal(h.get('send').disabled, false);
+  query(h, '내 역할은 뭐야?'); await tick();
+  assert.equal(h.calls.length, 0); assert.equal(h.get('query').value, '내 역할은 뭐야?');
+  assert.equal(h.get('login-dialog').open, true); assert.equal(h.get('login-username').focusCount, 1);
+  assert.equal(h.text(), ''); assert.ok(h.get('login-status').textContent.includes('로그인'));
+});
+test('login posts exact credentials to fixed relay and initializes only with memory-held MCP bearer', async () => {
+  const h = harness(); query(h, '사용자 U200에 reader 역할 추가해');
+  const done = startLogin(h, 'local-id-demo', '  Exact password  '), request = h.calls[0];
+  assert.equal(h.get('login-password').value, ''); assert.equal(h.get('login-submit').disabled, true);
+  assert.equal(request.url, '/auth/login'); assert.deepEqual(request.body, { username: 'local-id-demo', password: '  Exact password  ' });
+  for (const [key, value] of Object.entries({ method: 'POST', mode: 'same-origin', credentials: 'omit', redirect: 'error', cache: 'no-store' })) assert.equal(request.options[key], value);
+  assert.equal(Object.hasOwn(request.options.headers, 'Authorization'), false);
+  await finishLogin(h, done);
+  assert.deepEqual(h.calls.slice(1).map(call => call.body.method), ['initialize', 'notifications/initialized', 'tools/list']);
+  for (const call of h.calls.slice(1)) { assert.equal(call.url, '/mcp'); assert.equal(call.options.headers.Authorization, 'Bearer unit-mcp.payload.signature'); }
+  assert.equal(h.get('login-dialog').open, false); assert.equal(h.get('token').value, ''); assert.equal(h.get('login-password').value, '');
+  assert.equal(h.get('connection-state').textContent, '연결됨'); assert.equal(h.get('query').value, '사용자 U200에 reader 역할 추가해');
+  assert.equal(h.text().includes('LOGIN_METADATA_ONLY'), false); assert.equal(h.text().includes('unit-'), false); assert.equal(mutationCount(h), 0);
+  const access = await show(h, '내 정보 알려줘', accessTool()); assert.equal(access.options.headers.Authorization, 'Bearer unit-mcp.payload.signature');
+  assert.ok(h.text().includes('Alice')); assert.equal(h.timers.size, 1);
+  assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie|atob\(/);
+});
+test('invalid local login input sends nothing and never normalizes exact passwords', async () => {
+  for (const [username, password] of [[' alice', 'secret'], ['alice\n', 'secret'], ['alice', ''], ['alice', 'x'.repeat(257)], ['a'.repeat(65), 'secret'], ['../alice', 'secret']]) {
+    const h = harness(); await startLogin(h, username, password);
+    assert.equal(h.calls.length, 0); assert.equal(h.get('login-password').value, ''); assert.ok(h.get('login-status').textContent.includes('1–256'));
+  }
+  const h = harness(), done = startLogin(h, 'alice', ' '); assert.equal(h.calls[0].body.password, ' ');
+  h.get('login-cancel').dispatch('click'); h.calls[0].resolve(response(loginData())); await done;
+});
+test('wrong credentials remain logged out with one fixed message and no MCP initialization', async () => {
+  const h = harness(); query(h, '내 역할은 뭐야?'); const done = startLogin(h);
+  h.calls[0].resolve(new Response(JSON.stringify({ code: 'INVALID_CREDENTIALS' }), { status: 401, headers: { 'Content-Type': 'application/json' } })); await done;
+  assert.equal(h.calls.length, 1); assert.equal(h.get('login-dialog').open, true); assert.equal(h.get('login-password').value, '');
+  assert.equal(h.get('login-status').textContent, '사용자 이름 또는 비밀번호를 확인하세요.'); assert.equal(h.get('connection-state').textContent, '연결 안 됨');
+  assert.equal(h.get('query').value, '내 역할은 뭐야?'); assert.equal(h.timers.size, 0);
+});
+test('login network failure and timeout are distinct without exposing upstream errors', async () => {
+  for (const timeout of [false, true]) {
+    const h = harness(), done = startLogin(h);
+    if (timeout) { [...h.timers.values()][0](); h.calls[0].reject(new DOMException('Aborted', 'AbortError')); }
+    else h.calls[0].reject(new TypeError('SECRET_UPSTREAM_URL'));
+    await done;
+    const note = h.get('login-status').textContent; assert.ok(note.includes(timeout ? '12초' : '로그인 서버에 접속할 수 없습니다'));
+    assert.equal(note.includes('SECRET'), false); assert.equal(h.get('login-password').value, ''); assert.equal(h.timers.size, 0); assert.equal(h.calls.length, 1);
+  }
+});
+test('login cancellation, Escape, close and pagehide abort and fence late successful responses', async () => {
+  for (const action of ['cancel', 'escape', 'close', 'pagehide']) {
+    const h = harness(), done = startLogin(h), request = h.calls[0];
+    if (action === 'cancel') h.get('login-cancel').dispatch('click');
+    else if (action === 'escape') h.get('login-dialog').dispatch('cancel');
+    else if (action === 'close') h.get('login-dialog').close();
+    else h.win.dispatch('pagehide');
+    assert.equal(request.options.signal.aborted, true); assert.equal(h.get('login-password').value, ''); assert.equal(h.timers.size, 0);
+    request.resolve(response(loginData())); await done;
+    assert.equal(h.calls.length, 1); assert.equal(h.get('connection-state').textContent, '연결 안 됨'); assert.equal(h.get('login-dialog').open, false);
+  }
+});
+test('cancelled Alice login cannot override a later Bob session or clear Bob password input', async () => {
+  const h = harness(), oldDone = startLogin(h), old = h.calls[0]; h.get('login-cancel').dispatch('click');
+  h.get('login-open').dispatch('click'); h.get('login-username').value = 'bob'; h.get('login-password').value = 'new-password';
+  old.resolve(response(loginData('old-alice.payload.signature'))); await oldDone;
+  assert.equal(h.get('login-password').value, 'new-password'); assert.equal(h.calls.length, 1);
+  const done = h.get('login-form').dispatch('submit'); await finishLogin(h, done, loginData('new-bob.payload.signature'));
+  await show(h, '내 정보 알려줘', asTool(bob()));
+  assert.equal(h.calls.at(-1).options.headers.Authorization, 'Bearer new-bob.payload.signature'); assert.ok(h.text().includes('Bob')); assert.equal(h.text().includes('Alice'), false);
+});
+test('MCP rejection after successful credential check clears tokens and requires login again', async () => {
+  const h = harness(), done = startLogin(h); h.calls[0].resolve(response(loginData())); await tick();
+  h.calls.at(-1).resolve(new Response('SECRET', { status: 401 })); await done;
+  assert.equal(h.calls.length, 2); assert.equal(h.get('connection-state').textContent, '연결 안 됨'); assert.equal(h.get('login-dialog').open, true);
+  assert.ok(h.get('login-status').textContent.includes('인증할 수 없습니다')); assert.equal(h.timers.size, 0); assert.equal(h.get('token').value, '');
+});
+test('logout clears login session, catalogs, preview and prior-user results and fences late reads', async () => {
+  const h = harness(); await login(h); await show(h, '내 정보 알려줘', accessTool()); await previewManagement(h);
+  const old = query(h, '내 역할은 뭐야?'); h.get('disconnect').dispatch('click');
+  assert.equal(h.text(), ''); assert.equal(h.get('login-username').value, ''); assert.equal(h.get('login-password').value, ''); assert.equal(h.timers.size, 0);
+  assert.equal(h.get('manage-preview').hidden, true); assert.equal(h.get('relationship-view').hidden, true); assert.equal(h.get('manage-first').value, '');
+  answer(old, accessTool()); await tick(); assert.equal(h.text(), ''); assert.equal(h.get('login-open').hidden, false);
+  const count = h.calls.length; query(h, '내 역할은 뭐야?'); assert.equal(h.calls.length, count); assert.equal(h.get('login-dialog').open, true);
+});
+test('actual login lifetime expires session and suppresses a pending read without automatic retry', async () => {
+  for (const lifetime of [60, 300, 900]) {
+    const h = harness(); await login(h, loginData(undefined, lifetime));
+    assert.equal([...h.timerDelays.values()][0], lifetime * 1000);
+    await show(h, '내 정보 알려줘', accessTool()); const old = query(h, '내 역할은 뭐야?'), count = h.calls.length;
+    expireLogin(h); assert.equal(old.options.signal.aborted, true); assert.equal(h.text(), ''); assert.equal(h.get('login-dialog').open, true);
+    assert.ok(h.get('connection-note').textContent.includes('만료')); assert.equal(h.timers.size, 0);
+    answer(old, accessTool()); await tick(); assert.equal(h.calls.length, count); assert.equal(h.text(), '');
+  }
+});
+test('expired login is checked before new requests even when browser timer was delayed', async () => {
+  const h = harness(); await login(h, loginData(undefined, 60)); const count = h.calls.length;
+  h.advance(60001); query(h, '내 역할은 뭐야?');
+  assert.equal(h.calls.length, count); assert.equal(h.get('login-dialog').open, true); assert.equal(h.get('connection-state').textContent, '연결 안 됨');
+});
+test('401 from authenticated chat clears login expiry and all session data before relogin', async () => {
+  const h = harness(); await login(h); await show(h, '내 정보 알려줘', accessTool());
+  const call = query(h, '내 역할은 뭐야?'); call.resolve(new Response('SECRET', { status: 401 })); await tick();
+  assert.equal(h.text(), ''); assert.equal(h.timers.size, 0); assert.equal(h.get('login-dialog').open, true); assert.equal(h.get('token').value, '');
+  assert.ok(h.get('login-status').textContent.includes('다시 로그인')); assert.equal(h.get('login-password').value, '');
+});
+test('login expiry during sent mutation preserves unknown outcome and fences mutation refresh', async () => {
+  const h = harness(); await login(h); await previewManagement(h);
+  const done = h.get('manage-execute').dispatch('click'), call = h.calls.at(-1), count = h.calls.length;
+  expireLogin(h); assert.ok(h.get('connection-note').textContent.includes('결과 미확인')); assert.ok(h.get('login-status').textContent.includes('롤백이 아니며'));
+  answer(call, asTool(mutationData('assign_role_to_user', { userId: 'U200', roleId: 'reader' }, true))); await done;
+  assert.equal(h.calls.length, count); assert.equal(h.text(), ''); assert.equal(h.get('manage-preview').hidden, true); assert.equal(mutationCount(h), 1);
+});
+test('primary login uses native accessible controls while manual bearer entry stays advanced', async () => {
+  const html = await readFile(new URL('../chat.html', import.meta.url), 'utf8');
+  assert.match(html, /<dialog id="login-dialog"[^>]*aria-labelledby="login-title"[^>]*aria-describedby="login-help"/);
+  for (const id of ['login-username', 'login-password']) assert.match(html, new RegExp(`<label for="${id}">`));
+  assert.match(html, /id="login-password"[^>]*type="password"[^>]*autocomplete="off"/);
+  assert.match(html, /<details class="advanced-connection">[\s\S]*?id="connect-form"[\s\S]*?<\/details>/);
+  assert.doesNotMatch(html.match(/<input id="query"[^>]*>/)[0], /disabled/);
+  assert.match(html, /id="login-cancel" type="button"/); assert.match(html, /id="login-status"[^>]*role="status"/);
 });

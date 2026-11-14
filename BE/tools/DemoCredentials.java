@@ -5,7 +5,7 @@ import java.security.*;
 import java.time.Instant;
 import java.util.*;
 
-/** Development credentials. Only --fixtures persists a private test issuer for same-key refresh. */
+/** Local development provisioning. Private keys, generated passwords and hashes never go to stdout. */
 public class DemoCredentials {
     private static final String ISSUER = "https://demo-issuer.invalid";
     private static boolean refresh;
@@ -27,9 +27,11 @@ public class DemoCredentials {
         } else {
             clientKey=generator.generateKeyPair(); delegatedKey=generator.generateKeyPair();
             write(directory,"issuer-public.pem",pem("PUBLIC",clientKey.getPublic()));
+            write(directory,"issuer-private.pem",pem("PRIVATE",clientKey.getPrivate()));
             write(directory,"delegation-public.pem",pem("PUBLIC",delegatedKey.getPublic()));
             write(directory,"delegation-private.pem",pem("PRIVATE",delegatedKey.getPrivate()));
             if(args.length==2) write(directory,"fixture-issuer-private.pem",pem("PRIVATE",clientKey.getPrivate()));
+            loginAccounts(directory);
         }
         long now = Instant.now().getEpochSecond();
         for (String user : List.of("alice", "bob", "carol", "local-id-demo", "admin")) {
@@ -39,6 +41,7 @@ public class DemoCredentials {
         }
         if (args.length == 2) {
             var wrongKey = generator.generateKeyPair();
+            directFixtures(directory, clientKey, delegatedKey, wrongKey, now);
             for (boolean delegated : List.of(false, true)) {
                 String prefix = delegated ? "api-" : "mcp-";
                 KeyPair key = delegated ? delegatedKey : clientKey;
@@ -113,6 +116,80 @@ public class DemoCredentials {
             }
         }
         System.out.println(refresh ? "Development fixtures refreshed under unchanged keys." : "Development credentials created; keep private key files backend-only.");
+    }
+
+    private static void loginAccounts(Path directory) throws Exception {
+        var random = new SecureRandom();
+        var passwords = new LinkedHashMap<String, String>();
+        var accounts = new ArrayList<Map<String, Object>>();
+        var sql = new StringBuilder("-- Generated hashes only. Apply once after Flyway V7; duplicate accounts fail.\n");
+        for (String username : List.of("alice", "bob", "carol", "local-id-demo", "admin")) {
+            byte[] secret = new byte[24]; random.nextBytes(secret);
+            String password = B64.encodeToString(secret);
+            byte[] salt = new byte[16]; random.nextBytes(salt);
+            char[] chars = password.toCharArray();
+            var spec = new javax.crypto.spec.PBEKeySpec(chars, salt, 600000, 256);
+            Arrays.fill(chars, '\0');
+            String hash;
+            try {
+                hash = "pbkdf2-sha256$600000$" + B64.encodeToString(salt) + "$" + B64.encodeToString(
+                        javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded());
+            } finally { spec.clearPassword(); Arrays.fill(secret, (byte) 0); }
+            String userId = username.equals("local-id-demo") ? "U900" : username;
+            passwords.put(username, password);
+            var account = new LinkedHashMap<String, Object>();
+            account.put("username", username); account.put("userId", userId); account.put("issuer", ISSUER);
+            account.put("subject", username); account.put("passwordHash", hash); account.put("enabled", true);
+            accounts.add(account);
+            // All values are generated from a closed ASCII set, never operator-provided SQL fragments.
+            sql.append("INSERT INTO login_accounts (username,user_id,password_hash,enabled) VALUES ('")
+                    .append(username).append("','").append(userId).append("','").append(hash).append("',TRUE);\n");
+        }
+        write(directory, "login-passwords.json", json(passwords) + "\n");
+        write(directory, "login-accounts.json", json(accounts) + "\n");
+        write(directory, "login-accounts.sql", sql.toString());
+    }
+
+    private static void directFixtures(Path directory, KeyPair userKey, KeyPair delegatedKey, KeyPair wrongKey, long now) throws Exception {
+        var base = claims(false, "alice", now);
+        base.put("aud", List.of("access-api")); base.put("scope", "access.read"); base.put("exp", now + 900);
+        write(directory, "api-direct-valid.jwt", token(userKey, base, "RS256"));
+        for (String user : List.of("bob", "carol", "local-id-demo", "admin")) {
+            var changed = new LinkedHashMap<>(base); changed.put("sub", user);
+            if (user.equals("admin")) changed.put("scope", "access.read access.manage");
+            write(directory, "api-direct-" + user + ".jwt", token(userKey, changed, "RS256"));
+        }
+        for (String field : List.of("aud", "iss", "exp", "sub", "iat")) {
+            var changed = new LinkedHashMap<>(base); changed.remove(field);
+            write(directory, "api-direct-no-" + field + ".jwt", token(userKey, changed, "RS256"));
+        }
+        for (String variant : List.of("wrong-audience", "wrong-issuer", "expired", "future", "blank-subject", "typed-subject", "no-scope", "actor", "original", "typed-iat", "typed-exp", "typed-nbf", "long-lived")) {
+            var changed = new LinkedHashMap<>(base);
+            switch (variant) {
+                case "wrong-audience" -> changed.put("aud", List.of("access-mcp"));
+                case "wrong-issuer" -> changed.put("iss", "https://untrusted.invalid");
+                case "expired" -> changed.put("exp", now - 10);
+                case "future" -> changed.put("nbf", now + 30);
+                case "blank-subject" -> changed.put("sub", " ");
+                case "typed-subject" -> changed.put("sub", 42);
+                case "actor" -> changed.put("act", Map.of("sub", "access-mcp"));
+                case "original" -> changed.put("original_iss", ISSUER);
+                case "typed-iat" -> changed.put("iat", Long.toString(now));
+                case "typed-exp" -> changed.put("exp", Long.toString(now + 900));
+                case "typed-nbf" -> changed.put("nbf", Long.toString(now - 1));
+                case "long-lived" -> changed.put("exp", now + 901);
+                default -> changed.put("scope", "");
+            }
+            write(directory, "api-direct-" + variant + ".jwt", token(userKey, changed, "RS256"));
+        }
+        write(directory, "api-direct-forged.jwt", token(wrongKey, base, "RS256"));
+        write(directory, "api-direct-cross-key.jwt", token(delegatedKey, base, "RS256"));
+        write(directory, "api-direct-wrong-alg.jwt", token(userKey, base, "RS512"));
+        write(directory, "api-user-key.jwt", token(userKey, claims(true, "alice", now), "RS256"));
+        for (String subject : List.of("alice", "carol", "unknown-user")) {
+            var changed = new LinkedHashMap<>(base); changed.put("sub", subject); changed.put("scope", "access.read access.manage");
+            write(directory, "api-direct-" + subject + "-manage.jwt", token(userKey, changed, "RS256"));
+        }
     }
     private static Map<String, Object> claims(boolean delegated, String subject, long now) {
         var claims = new LinkedHashMap<String, Object>();

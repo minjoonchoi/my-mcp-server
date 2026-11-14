@@ -1,6 +1,7 @@
 package example.api;
 
 import java.util.Map;
+import example.security.VerifiedCaller;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -12,19 +13,22 @@ import org.springframework.web.bind.annotation.*;
 @PreAuthorize("hasAuthority('SCOPE_access.read')")
 public class AccessController {
     private final AccessRepository directory;
-    public AccessController(AccessRepository directory) { this.directory = directory; }
+    private final VerifiedCaller callers;
+    public AccessController(AccessRepository directory, VerifiedCaller callers) { this.directory = directory; this.callers = callers; }
 
     @GetMapping
     public ResponseEntity<?> me(@AuthenticationPrincipal Jwt jwt, @RequestParam Map<String, String> params) {
         if (!params.isEmpty()) return invalid();
-        return ResponseEntity.ok(directory.access(jwt.getClaimAsString("original_iss"), jwt.getSubject()));
+        var identity = callers.resolve(jwt);
+        return ResponseEntity.ok(directory.access(identity.issuer(), identity.subject()));
     }
 
     @GetMapping("/resources/{resourceId}/access")
     public ResponseEntity<?> resource(@AuthenticationPrincipal Jwt jwt, @PathVariable String resourceId,
             @RequestParam Map<String, String> params) {
         if (!params.isEmpty() || !resourceId.matches("R[0-9]{3}")) return invalid();
-        return ResponseEntity.ok(directory.resourceAccess(jwt.getClaimAsString("original_iss"), jwt.getSubject(), resourceId));
+        var identity = callers.resolve(jwt);
+        return ResponseEntity.ok(directory.resourceAccess(identity.issuer(), identity.subject(), resourceId));
     }
 
     private ResponseEntity<?> invalid() { return ResponseEntity.badRequest().body(Map.of("code", "INVALID_ARGUMENT")); }

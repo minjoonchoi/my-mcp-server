@@ -123,6 +123,9 @@ public class JdbcAccessRepository implements AccessRepository {
         if (leftRows.stream().anyMatch(Boolean::booleanValue) || rightRows.stream().anyMatch(Boolean::booleanValue))
             throw new ApiProblem(403,"FORBIDDEN");
         if (leftRows.isEmpty() || rightRows.isEmpty()) throw new ApiProblem(404,"NOT_FOUND");
+        if (relation.table().equals("policy_resources") && jdbc.queryForObject(
+                "SELECT COUNT(*) FROM context_policy_rules WHERE policy_id=?", Integer.class, left) > 0)
+            throw new ApiProblem(400, "INVALID_ARGUMENT");
         List<String> affected = switch (relation.table()) {
             case "user_roles" -> List.of(left);
             case "role_policies" -> jdbc.queryForList("SELECT user_id FROM user_roles WHERE role_id=? ORDER BY user_id",String.class,left);

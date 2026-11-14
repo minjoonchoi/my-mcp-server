@@ -3,7 +3,7 @@ import re
 from errors import Blocked
 
 ALLOWED_ENV = {'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
-               'USER', 'LOGNAME', 'JAVA_HOME', 'SYSTEMROOT', 'E2E_PLAYWRIGHT_MODULE'}
+               'USER', 'LOGNAME', 'JAVA_HOME', 'SYSTEMROOT', 'E2E_PLAYWRIGHT_MODULE', 'E2E_CHROMIUM_EXECUTABLE'}
 
 def safe_environment(inherited, settings=None):
     safe = {key: value for key, value in inherited.items() if key in ALLOWED_ENV}

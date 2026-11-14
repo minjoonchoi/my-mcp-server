@@ -1,5 +1,6 @@
 const PROTOCOL = '2025-06-18';
 const MAX_RESPONSE = 128 * 1024;
+const MAX_LOGIN_RESPONSE = 16 * 1024;
 const TIMEOUT = 12000;
 const CATALOGS = ['users', 'roles', 'policies', 'resources'];
 const ID_PATTERN = '^[A-Za-z0-9_-]{1,64}$';
@@ -18,7 +19,12 @@ const TOOL_KEYS = {
 };
 const CONCEPTS = ['overview', 'permission', 'role', 'policy', 'resource'];
 const messages = {
-  AUTH: '인증할 수 없습니다. 토큰이 없거나 만료·유효하지 않습니다. 새 MCP 토큰으로 연결하세요.',
+  AUTH: '인증할 수 없습니다. 로그인이 만료되었거나 유효하지 않습니다. 다시 로그인하세요.',
+  LOGIN_INPUT: '사용자 이름은 영문·숫자·_·- 1–64자, 비밀번호는 1–256자로 입력하세요.',
+  LOGIN_CREDENTIALS: '사용자 이름 또는 비밀번호를 확인하세요.',
+  LOGIN_UNAVAILABLE: '로그인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도하세요.',
+  LOGIN_NETWORK: '로그인 서버에 접속할 수 없습니다. 연결 상태를 확인하세요.',
+  LOGIN_PROTOCOL: '로그인 응답을 확인할 수 없습니다. 서버 관리자에게 확인하세요.',
   FORBIDDEN: '요청 권한이 부족합니다. 조회는 authz.read, 변경은 authz.manage와 서버의 관리자 권한이 필요하며 보호된 관계는 변경할 수 없습니다.',
   NOT_FOUND: '대상을 조회하거나 변경할 수 없습니다. 보이지 않는 대상과 없는 대상은 구분하지 않습니다.',
   TARGET: '작업과 대상 ID를 정확히 입력하세요. 사용자·역할·정책 ID는 영문/숫자/_/- 1–64자, 리소스 ID는 R과 숫자 3자리입니다.',
@@ -45,9 +51,53 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const fail = () => { throw new SafeError('PROTOCOL'); };
 const string = (value, max = 2000) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const identifier = value => string(value, 128) && !/[\s\u0000-\u001f\u007f]/u.test(value);
-const catalogId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+const catalogId = value => typeof value === 'string' && value.length >= 1 && value.length <= 64 && !/[^A-Za-z0-9_-]/.test(value);
 const resourceId = value => typeof value === 'string' && /^R[0-9]{3}$/.test(value);
 const sameSet = (a, b) => a.length === b.length && new Set(a).size === a.length && a.every(value => b.includes(value));
+export function loginResult(value) {
+  const bearer = value => typeof value === 'string' && value.length <= 8192 && value.split('.').length === 3
+    && value.split('.').every(part => part.length > 0 && !/[^A-Za-z0-9_-]/.test(part));
+  if (!object(value) || !sameSet(Object.keys(value), ['tokenType', 'expiresIn', 'mcpAccessToken', 'apiAccessToken', 'user'])
+      || value.tokenType !== 'Bearer' || !Number.isInteger(value.expiresIn) || value.expiresIn < 60 || value.expiresIn > 900
+      || !bearer(value.mcpAccessToken) || !bearer(value.apiAccessToken) || value.mcpAccessToken === value.apiAccessToken
+      || !object(value.user) || !sameSet(Object.keys(value.user), ['id', 'name']) || !catalogId(value.user.id) || !string(value.user.name, 200)) {
+    throw new SafeError('LOGIN_PROTOCOL');
+  }
+  // The API token and user metadata are not retained. Display identity comes from get_my_access.
+  return { mcpAccessToken: value.mcpAccessToken, expiresIn: value.expiresIn };
+}
+export async function readLoginResponse(response) {
+  const protocolError = () => { throw new SafeError('LOGIN_PROTOCOL'); };
+  if (![200, 400, 401, 503].includes(response.status)) {
+    await response.body?.cancel(); throw new SafeError('LOGIN_UNAVAILABLE');
+  }
+  if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json' || !response.body) {
+    await response.body?.cancel(); protocolError();
+  }
+  const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
+  let bytes = 0, body = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) {
+        bytes += value.byteLength;
+        if (bytes > MAX_LOGIN_RESPONSE) protocolError();
+        body += decoder.decode(value, { stream: true });
+      }
+      if (done) break;
+    }
+    body += decoder.decode();
+    const data = JSON.parse(body);
+    if (response.status === 200) return loginResult(data);
+    const errors = { 400: ['INVALID_ARGUMENT', 'LOGIN_INPUT'], 401: ['INVALID_CREDENTIALS', 'LOGIN_CREDENTIALS'], 503: ['AUTH_UNAVAILABLE', 'LOGIN_UNAVAILABLE'] };
+    const [code, message] = errors[response.status];
+    if (!object(data) || !sameSet(Object.keys(data), ['code']) || data.code !== code) protocolError();
+    throw new SafeError(message);
+  } catch (error) {
+    if (error instanceof SafeError || error?.name === 'AbortError') throw error;
+    protocolError();
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 function uniqueStrings(value) {
   if (!Array.isArray(value) || value.length > 200 || !value.every(identifier) || new Set(value).size !== value.length) fail();
   return [...value];
@@ -329,8 +379,9 @@ export async function readResponse(response, id) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const tokenInput = $('token'), query = $('query');
+  const tokenInput = $('token'), query = $('query'), loginDialog = $('login-dialog'), loginPassword = $('login-password');
   let token = '', ready = false, generation = 0, sequence = 0, active = null, preview = null, previewRevision = 0;
+  let expiresAt = 0, expiryTimer = null;
   let browseCatalog = null, targetCatalogs = null;
   const catalogLabels = { users: '사용자', roles: '역할', policies: '정책', resources: '리소스' };
   const keyCatalog = { userId: 'users', roleId: 'roles', policyId: 'policies', resourceId: 'resources' };
@@ -363,10 +414,12 @@ if (typeof document !== 'undefined') {
     clearTargets();
   }
   function ensureConnected() {
+    if (expiresAt && Date.now() >= expiresAt) requireLogin('로그인 시간이 만료되었습니다. 다시 로그인하세요.');
     if (!ready) {
-      $('discovery-status').textContent = '이 기능을 사용하려면 개발용 MCP 토큰을 입력하고 연결하기를 누르세요.';
-      $('connection-note').textContent = '토큰으로 먼저 연결한 뒤 선택한 기능을 다시 실행하세요.';
-      tokenInput.focus(); return false;
+      if (active) return false;
+      $('discovery-status').textContent = '이 기능을 사용하려면 로그인하세요. 로그인 후 선택한 기능을 다시 실행할 수 있습니다.';
+      $('connection-note').textContent = '로그인 후 질문을 보내거나 선택한 기능을 다시 실행하세요.';
+      openLogin(); return false;
     }
     if (active) { $('discovery-status').textContent = '요청 처리 중입니다. 완료하거나 취소한 뒤 다시 선택하세요.'; return false; }
     return true;
@@ -420,15 +473,21 @@ if (typeof document !== 'undefined') {
   }
   function refresh() {
     $('connect').disabled = ready || !!active;
+    $('login-open').disabled = ready || !!active;
+    $('login-open').hidden = ready;
+    $('login-submit').disabled = !!active || ready;
+    $('login-username').disabled = !!active;
+    loginPassword.disabled = !!active;
+    $('login-form').setAttribute('aria-busy', String(active?.kind === 'login'));
     $('disconnect').disabled = !ready && !active && !token;
-    $('send').disabled = !ready || !!active;
-    query.disabled = !ready || !!active;
-    query.placeholder = ready ? '예: 내 역할은 뭐야?' : '연결 후 내 권한을 질문하세요';
+    $('send').disabled = !!active;
+    query.disabled = !!active;
+    query.placeholder = ready ? '예: 내 역할은 뭐야?' : '질문을 입력하면 로그인으로 안내합니다';
     $('cancel').hidden = !active;
     document.querySelectorAll('[data-query]').forEach(button => { button.disabled = !!active; });
     $('connection-state').textContent = ready ? '연결됨' : active ? '연결 중' : '연결 안 됨';
     $('connection-state').dataset.state = ready ? 'ready' : active ? 'busy' : 'idle';
-    $('activity').textContent = active ? (ready ? '서버에서 요청을 처리하고 있습니다…' : 'MCP 연결을 확인하고 있습니다…') : ready ? '조회 범위와 관리 권한은 서버에서 검증합니다.' : '연결을 기다리고 있습니다.';
+    $('activity').textContent = active ? (ready ? '서버에서 요청을 처리하고 있습니다…' : active.kind === 'login' ? '로그인과 MCP 연결을 확인하고 있습니다…' : 'MCP 연결을 확인하고 있습니다…') : ready ? '조회 범위와 관리 권한은 서버에서 검증합니다.' : '질문을 입력하거나 로그인하세요.';
     for (const id of ['manage-operation', 'manage-first', 'manage-second', 'manage-preview-button', 'refresh-access']) $(id).disabled = !ready || !!active;
     $('manage-execute').disabled = !ready || !!active || !preview;
     $('manage-cancel').disabled = !preview && !['preview', 'mutation', 'refresh', 'targets'].includes(active?.kind);
@@ -442,19 +501,46 @@ if (typeof document !== 'undefined') {
     $('capabilities').setAttribute('aria-busy', String(!!active));
     managementLabels();
   }
-  function invalidate(clearInput = true) {
+  function invalidate(clearInput = true, keepDraft = false) {
     generation++;
+    clearTimeout(expiryTimer); expiryTimer = null; expiresAt = 0;
     clearTimeout(active?.timer);
     active?.controller.abort();
     active = null; token = ''; ready = false;
+    loginPassword.value = '';
     if (clearInput) tokenInput.value = '';
-    query.value = '';
+    if (!keepDraft) query.value = '';
     $('messages').replaceChildren();
     clearDiscovery();
-    $('discovery-status').textContent = '연결 정보와 이전 조회 결과를 지웠습니다. 새로 연결한 뒤 다시 조회하세요.';
+    $('discovery-status').textContent = '로그인 정보와 이전 조회 결과를 지웠습니다. 로그인한 뒤 다시 조회하세요.';
     clearPreview(true);
     $('manage-status').textContent = '연결 후 새 미리보기가 필요합니다.';
     refresh();
+  }
+  function openLogin(note = '로그인이 필요합니다. 로그인 후 작성 중인 질문을 보낼 수 있습니다.') {
+    if (ready || active) return;
+    loginPassword.value = '';
+    $('login-status').textContent = note;
+    if (!loginDialog.open) loginDialog.showModal();
+    $('login-username').focus();
+  }
+  function closeLogin() {
+    loginPassword.value = '';
+    if (loginDialog.open) loginDialog.close();
+  }
+  function requireLogin(note) {
+    const sent = active?.sentMutation;
+    invalidate(true, true);
+    const message = `${note}${sent && !note.includes(unknownOutcome) ? ` ${unknownOutcome} 로그인 후 최신 상태를 조회하세요.` : ''}`;
+    $('connection-note').textContent = message;
+    openLogin(message);
+  }
+  function scheduleExpiry(lifetime, startedAt) {
+    expiresAt = startedAt + lifetime * 1000;
+    const connectionGeneration = generation;
+    expiryTimer = setTimeout(() => {
+      if (connectionGeneration === generation) requireLogin('로그인 시간이 만료되었습니다. 다시 로그인하세요.');
+    }, Math.max(0, expiresAt - Date.now()));
   }
   function bubble(text, role = 'assistant', error = false) {
     const article = document.createElement('article'); article.className = `message ${role}${error ? ' error' : ''}`;
@@ -487,6 +573,7 @@ if (typeof document !== 'undefined') {
   }
   async function rpc(operation, method, params, notification = false) {
     if (!current(operation)) throw new SafeError('CANCELLED');
+    if (expiresAt && Date.now() >= expiresAt) { requireLogin('로그인 시간이 만료되었습니다. 다시 로그인하세요.'); throw new SafeError('AUTH'); }
     operation.controller.signal.throwIfAborted();
     const id = ++sequence;
     const body = { jsonrpc: '2.0', method, ...(notification ? {} : { id }), ...(params ? { params } : {}) };
@@ -516,48 +603,106 @@ if (typeof document !== 'undefined') {
   function safeFailure(error, operation) {
     return operation.timedOut ? new SafeError('TIMEOUT') : error?.name === 'AbortError' ? new SafeError('CANCELLED') : error instanceof SafeError ? error : new SafeError('SERVER');
   }
-  $('connect-form').addEventListener('submit', async event => {
+  async function connectMcp(operation) {
+    $('connection-note').textContent = '서버 초기화와 권한 도구 12개를 확인하고 있습니다.';
+    const init = await rpc(operation, 'initialize', { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: 'access-chat', version: '1.0.0' } });
+    if (!current(operation)) return;
+    if (init.protocolVersion !== PROTOCOL || !object(init.capabilities) || !object(init.serverInfo)) throw new SafeError('PROTOCOL');
+    await rpc(operation, 'notifications/initialized', undefined, true);
+    if (!current(operation)) return;
+    const list = await rpc(operation, 'tools/list', {});
+    if (!current(operation)) return;
+    validateTools(list);
+    ready = true;
+    tokenInput.value = '';
+    $('connection-note').textContent = '권한 도구 12개를 확인했습니다. 질문을 보내거나 관리 양식에서 미리보기를 만드세요.';
+    bubble('MCP 서버에 연결했습니다. 내 권한이나 조회 가능한 카탈로그를 질문하세요. 관계 변경은 관리 양식에서 미리보기 후 실행합니다.');
+  }
+  $('login-open').addEventListener('click', () => openLogin());
+  const cancelLogin = () => {
+    if (active?.kind === 'login') invalidate(true, true);
+    closeLogin();
+    $('connection-note').textContent = '로그인을 취소했습니다. 질문을 보내려면 다시 로그인하세요.';
+    query.focus();
+  };
+  $('login-cancel').addEventListener('click', cancelLogin);
+  loginDialog.addEventListener('cancel', event => { event.preventDefault(); cancelLogin(); });
+  loginDialog.addEventListener('close', () => {
+    // Ignore an earlier close event if a new login dialog has already opened.
+    if (loginDialog.open) return;
+    loginPassword.value = '';
+    if (active?.kind === 'login' && !ready) cancelLogin();
+  });
+  $('login-form').addEventListener('submit', async event => {
     event.preventDefault();
     if (active || ready) return;
-    token = tokenInput.value.trim();
-    if (!token || /\s/.test(token)) { token = ''; $('connection-note').textContent = '공백 없는 MCP 토큰을 입력하세요. Bearer 접두사는 제외하세요.'; return; }
-    generation++;
-    $('messages').replaceChildren();
-    clearDiscovery();
-    const operation = begin();
-    clearPreview(true);
-    $('connection-note').textContent = '서버 초기화와 권한 도구 12개를 확인하고 있습니다.';
+    const username = $('login-username').value;
+    let password = loginPassword.value;
+    loginPassword.value = '';
+    if (!catalogId(username) || !password || password.length > 256) {
+      password = ''; $('login-status').textContent = messages.LOGIN_INPUT; loginPassword.focus(); return;
+    }
+    invalidate(true, true);
+    const operation = begin('login'), startedAt = Date.now();
+    $('login-status').textContent = '로그인 정보를 확인하고 있습니다…';
     try {
-      const init = await rpc(operation, 'initialize', { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: 'access-chat', version: '1.0.0' } });
+      let request;
+      try {
+        request = fetch('/auth/login', { method: 'POST', mode: 'same-origin', credentials: 'omit', redirect: 'error', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ username, password }), signal: operation.controller.signal });
+      } finally { password = ''; }
+      const response = await request.catch(error => { if (error?.name === 'AbortError') throw error; throw new SafeError('LOGIN_NETWORK'); });
+      if (!current(operation)) { await response.body?.cancel(); return; }
+      const result = await readLoginResponse(response);
+      operation.controller.signal.throwIfAborted();
       if (!current(operation)) return;
-      if (init.protocolVersion !== PROTOCOL || !object(init.capabilities) || !object(init.serverInfo)) throw new SafeError('PROTOCOL');
-      await rpc(operation, 'notifications/initialized', undefined, true);
-      if (!current(operation)) return;
-      const list = await rpc(operation, 'tools/list', {});
-      if (!current(operation)) return;
-      validateTools(list);
-      ready = true;
-      tokenInput.value = '';
-      $('connection-note').textContent = '권한 도구 12개를 확인했습니다. 조회하거나 관리 양식에서 미리보기를 만드세요.';
-      bubble('MCP 서버에 연결했습니다. 내 권한이나 조회 가능한 카탈로그를 질문하세요. 관계 변경은 관리 양식에서 미리보기 후 실행합니다.');
+      token = result.mcpAccessToken;
+      scheduleExpiry(result.expiresIn, startedAt);
+      $('login-status').textContent = '로그인한 사용자로 MCP 연결을 확인하고 있습니다…';
+      await connectMcp(operation);
+      if (current(operation) && ready) { $('login-status').textContent = ''; closeLogin(); }
     } catch (error) {
       if (!current(operation)) return;
       const failure = safeFailure(error, operation);
-      invalidate(); $('connection-note').textContent = failure.message;
-    } finally { finish(operation); if (ready && !active) query.focus(); }
+      invalidate(true, true);
+      $('connection-note').textContent = failure.message;
+      openLogin(failure.message);
+      if (failure.code === 'LOGIN_CREDENTIALS') loginPassword.focus();
+    } finally {
+      password = '';
+      if (operation.generation === generation) loginPassword.value = '';
+      finish(operation); if (ready && !active && operation.generation === generation) query.focus();
+    }
+  });
+  $('connect-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (active || ready) return;
+    const suppliedToken = tokenInput.value.trim();
+    if (!suppliedToken || /\s/.test(suppliedToken)) { $('connection-note').textContent = '공백 없는 MCP 토큰을 입력하세요. Bearer 접두사는 제외하세요.'; return; }
+    invalidate(true, true); closeLogin(); token = suppliedToken;
+    const operation = begin('connect');
+    try { await connectMcp(operation); }
+    catch (error) {
+      if (!current(operation)) return;
+      const failure = safeFailure(error, operation);
+      if (failure.code === 'AUTH') requireLogin(failure.message);
+      else { invalidate(true, true); $('connection-note').textContent = failure.message; }
+    } finally { finish(operation); if (ready && !active && operation.generation === generation) query.focus(); }
   });
   tokenInput.addEventListener('input', () => {
     if (token || ready || active) {
       const sent = active?.sentMutation;
-      invalidate(false); $('connection-note').textContent = `토큰이 변경되어 연결을 해제했습니다. 다시 연결하세요.${sent ? ` ${unknownOutcome} 재연결 후 최신 상태를 조회하세요.` : ''}`;
+      invalidate(false); closeLogin(); $('connection-note').textContent = `토큰이 변경되어 연결을 해제했습니다. 다시 연결하세요.${sent ? ` ${unknownOutcome} 재연결 후 최신 상태를 조회하세요.` : ''}`;
     }
   });
   $('disconnect').addEventListener('click', () => {
     const sent = active?.sentMutation;
-    invalidate(); $('connection-note').textContent = `연결을 해제하고 토큰을 지웠습니다.${sent ? ` ${unknownOutcome} 재연결 후 최신 상태를 조회하세요.` : ''}`; tokenInput.focus();
+    invalidate(); closeLogin(); $('login-username').value = ''; $('login-status').textContent = '';
+    $('connection-note').textContent = `로그아웃하고 토큰과 이전 조회 결과를 지웠습니다.${sent ? ` ${unknownOutcome} 로그인 후 최신 상태를 조회하세요.` : ''}`; $('login-open').focus();
   });
-  $('cancel').addEventListener('click', () => { active?.controller.abort(); });
+  $('cancel').addEventListener('click', () => { if (active?.kind === 'login') cancelLogin(); else active?.controller.abort(); });
   async function submit(text, focusId = 'query') {
+    if (!ready && !active) query.value = text;
     if (!ensureConnected()) return;
     let question;
     try { question = classifyQuestion(text); } catch (error) {
@@ -622,7 +767,7 @@ if (typeof document !== 'undefined') {
       if (!current(operation)) return;
       const failure = safeFailure(error, operation);
       bubble(failure.message, 'assistant', true);
-      if (failure.code === 'AUTH') { invalidate(); $('connection-note').textContent = failure.message; }
+      if (failure.code === 'AUTH') requireLogin(failure.message);
       if (question.kind === 'catalog' || question.kind === 'detail') $('browse-status').textContent = failure.message;
       $('discovery-status').textContent = failure.message; $('discovery-status').dataset.state = 'error';
     } finally {
@@ -662,7 +807,7 @@ if (typeof document !== 'undefined') {
       if (!current(operation)) return;
       const failure = safeFailure(error, operation);
       const note = `${mutationState === 'unknown' ? `${unknownOutcome}\n` : ''}최신 상태를 확인하지 못했습니다. 조회 권한 또는 연결을 확인한 후 다시 조회하세요. ${failure.message}`;
-      if (failure.code === 'AUTH') { invalidate(); $('connection-note').textContent = note; }
+      if (failure.code === 'AUTH') requireLogin(note);
       $('manage-status').textContent = note;
     } finally { finish(operation); }
   }
@@ -702,7 +847,7 @@ if (typeof document !== 'undefined') {
       const failure = safeFailure(error, operation);
       const note = `실행자 미리보기를 만들 수 없습니다. 이 UI는 authz.read로 실행자 확인이 필요합니다. ${failure.message}`;
       clearPreview();
-      if (failure.code === 'AUTH') { invalidate(); $('connection-note').textContent = note; }
+      if (failure.code === 'AUTH') requireLogin(note);
       $('manage-status').textContent = note;
     } finally { finish(operation); }
   });
@@ -733,7 +878,7 @@ if (typeof document !== 'undefined') {
       const failure = safeFailure(error, operation);
       const note = `${unknownOutcome}\n응답 안내: ${failure.message}`;
       if (failure.code === 'AUTH') {
-        invalidate(); $('connection-note').textContent = `${note} 인증이 필요하여 재조회하지 못했습니다. 재연결 후 최신 상태를 조회하세요.`;
+        requireLogin(`${note} 인증이 필요하여 재조회하지 못했습니다. 로그인 후 최신 상태를 조회하세요.`);
       } else bubble(note, 'assistant', true);
       $('manage-status').textContent = note;
     } finally {
@@ -815,7 +960,7 @@ if (typeof document !== 'undefined') {
       if (!current(operation)) return;
       const failure = safeFailure(error, operation);
       clearTargets();
-      if (failure.code === 'AUTH') { invalidate(); $('connection-note').textContent = failure.message; }
+      if (failure.code === 'AUTH') requireLogin(failure.message);
       $('manage-target-status').textContent = `대상 목록을 불러오지 못했습니다. ${failure.message}`;
       $('discovery-status').textContent = failure.message; $('discovery-status').dataset.state = 'error';
     } finally {
@@ -841,6 +986,6 @@ if (typeof document !== 'undefined') {
   }
   $('query-form').addEventListener('submit', event => { event.preventDefault(); void submit(query.value); });
   document.querySelectorAll('[data-query]').forEach(button => button.addEventListener('click', () => { void submit(button.dataset.query); }));
-  window.addEventListener('pagehide', () => invalidate());
+  window.addEventListener('pagehide', () => { invalidate(); closeLogin(); $('login-username').value = ''; $('login-status').textContent = ''; });
   refresh();
 }

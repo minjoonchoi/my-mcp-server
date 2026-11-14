@@ -30,7 +30,8 @@ class LauncherTests(unittest.TestCase):
             jar.write_bytes(b'unit dummy jar')
         self.api = {'MYSQL_DATABASE': 'access_demo', 'MYSQL_USER': 'app_user',
                     'MYSQL_PASSWORD': 'unit-secret $name $(noexec) `noexec` # = \\',
-                    'DB_PORT': '3307', 'DEMO_PUBLIC_KEY': 'key.pem'}
+                    'DB_PORT': '3307', 'DEMO_PUBLIC_KEY': 'key.pem',
+                    'AUTH_PUBLIC_KEY': 'key.pem', 'AUTH_PRIVATE_KEY': 'key.pem'}
         self.mcp = {key: 'key.pem' for key in ['DEMO_PUBLIC_KEY', 'DELEGATION_PRIVATE_KEY', 'DELEGATION_PUBLIC_KEY']}
 
     def env(self, values, name='server.env'):
@@ -100,7 +101,8 @@ class LauncherTests(unittest.TestCase):
                    'JAVA_TOOL_OPTIONS': 'injection', '_JAVA_OPTIONS': 'injection', 'JDK_JAVA_OPTIONS': 'injection',
                    'SPRING_APPLICATION_JSON': 'injection', 'SPRING_CONFIG_LOCATION': 'injection',
                    'SPRING_CONFIG_IMPORT': 'injection', 'SPRING_DATASOURCE_URL': 'injection',
-                   'DEMO_DIR': 'injection', 'SERVER_ADDRESS': '0.0.0.0', 'LD_PRELOAD': 'injection'}
+                   'DEMO_DIR': 'injection', 'SERVER_ADDRESS': '0.0.0.0', 'LD_PRELOAD': 'injection',
+                   'AUTH_ISSUER': 'injection', 'AUTH_TOKEN_TTL_SECONDS': '1', 'AUTH_FIXTURE_ACCOUNTS': 'injection'}
         api = self.prepare(shell=hostile)
         self.assertEqual(set(api.environment), set(self.inherited) | set(launcher.ALLOWED['api']) - {'SPRING_PROFILES_ACTIVE'})
         self.assertIn('--spring.config.location=classpath:/application.properties,classpath:/application-local.properties', api.argv)
@@ -110,11 +112,13 @@ class LauncherTests(unittest.TestCase):
                                            'SPRING_PROFILES_ACTIVE': 'fixture', 'JAVA_TOOL_OPTIONS': 'injection'})
         self.assertFalse(any(k.startswith(('MYSQL_', 'SPRING_')) for k in mcp.environment))
         self.assertNotIn('DB_PORT', mcp.environment)
+        self.assertFalse(any(k.startswith('AUTH_') for k in mcp.environment))
         self.assertIn('--spring.config.location=classpath:/application.properties', mcp.argv)
         self.assertFalse(any(a.startswith('--spring.profiles') for a in mcp.argv))
 
     def test_other_server_file_keys_and_fixed_trust_profile(self):
-        for key in ['MYSQL_ROOT_PASSWORD', 'DELEGATION_PRIVATE_KEY', 'SPRING_CONFIG_LOCATION']:
+        for key in ['MYSQL_ROOT_PASSWORD', 'DELEGATION_PRIVATE_KEY', 'SPRING_CONFIG_LOCATION',
+                    'AUTH_ISSUER', 'AUTH_TOKEN_TTL_SECONDS', 'AUTH_FIXTURE_ACCOUNTS']:
             with self.assertRaisesRegex(launcher.LaunchError, 'unknown or other-server'):
                 self.prepare(values={**self.api, key: 'secret'})
         for key, value in [('DEMO_ISSUER', 'https://wrong.invalid'), ('DEMO_AUDIENCE', 'other'),
@@ -122,6 +126,27 @@ class LauncherTests(unittest.TestCase):
                            ('MYSQL_DATABASE', 'db?injection'), ('DB_PORT', '65536'), ('SERVER_PORT', '0')]:
             with self.assertRaises(launcher.LaunchError):
                 self.prepare(values={**self.api, key: value})
+
+    def test_api_only_auth_keys_required_paths_precedence_and_placeholders(self):
+        other_key = self.config / 'second key.pem'
+        other_key.write_text('another test-only non-key')
+        for key in ['AUTH_PUBLIC_KEY', 'AUTH_PRIVATE_KEY']:
+            for invalid in [None, '', 'missing.pem', 'https://example.invalid/key', '${KEY}', 'replace-with-key']:
+                values = {**self.api, key: invalid}
+                if invalid is None:
+                    values.pop(key)
+                with self.assertRaises(launcher.LaunchError):
+                    self.prepare(values=values)
+            with self.assertRaisesRegex(launcher.LaunchError, 'placeholder syntax'):
+                self.prepare(values={**self.api, key: '${HIDDEN}'}, shell={**self.inherited, key: 'key.pem'})
+            for invalid in ['', '${SELECTED}']:
+                with self.assertRaises(launcher.LaunchError):
+                    self.prepare(shell={**self.inherited, key: invalid})
+            chosen = self.prepare(shell={**self.inherited, key: 'second key.pem'})
+            self.assertEqual(chosen.environment[key], other_key.as_uri())
+            self.assertEqual(self.prepare().environment[key], (self.config / 'key.pem').as_uri())
+            with self.assertRaisesRegex(launcher.LaunchError, 'other-server'):
+                self.prepare('mcp', {**self.mcp, key: 'key.pem'})
 
     def test_exact_api_origin(self):
         for value in ['http://localhost:8081', 'http://[::1]:8081', 'https://127.0.0.1:8081',

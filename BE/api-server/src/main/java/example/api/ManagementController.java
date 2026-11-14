@@ -1,6 +1,7 @@
 package example.api;
 
 import java.util.Map;
+import example.security.VerifiedCaller;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -10,7 +11,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class ManagementController {
     private final AccessRepository repository;
-    public ManagementController(AccessRepository repository) { this.repository = repository; }
+    private final VerifiedCaller callers;
+    public ManagementController(AccessRepository repository, VerifiedCaller callers) { this.repository = repository; this.callers = callers; }
 
     @GetMapping("/api/catalog/{entity}")
     @PreAuthorize("hasAuthority('SCOPE_access.read')")
@@ -45,7 +47,7 @@ public class ManagementController {
             @RequestParam Map<String,String> query, @RequestBody(required=false) String body, HttpServletRequest request) {
         return repository.change(issuer(jwt), jwt.getSubject(), request.getMethod().equals("PUT") ? "attach_resource_to_policy" : "detach_resource_from_policy", validatedTargets(query,body,Map.of("policyId",policyId,"resourceId",resourceId)));
     }
-    private static String issuer(Jwt jwt) { return jwt.getClaimAsString("original_iss"); }
+    private String issuer(Jwt jwt) { return callers.resolve(jwt).issuer(); }
     private static void noQuery(Map<String,String> query) { if (!query.isEmpty()) throw new ApiProblem(400,"INVALID_ARGUMENT"); }
     private static Map<String,String> validatedTargets(Map<String,String> query,String body,Map<String,String> targets) {
         if(query.isEmpty() && (body==null || body.isBlank())) return targets;

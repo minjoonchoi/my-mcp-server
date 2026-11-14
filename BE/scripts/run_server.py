@@ -13,6 +13,7 @@ BE_ROOT = Path(__file__).resolve().parents[1]
 COMMON = frozenset({'DEMO_PUBLIC_KEY', 'DEMO_ISSUER', 'DEMO_AUDIENCE', 'SERVER_PORT'})
 ALLOWED = {
     'api': COMMON | {'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD', 'DB_PORT',
+                     'AUTH_PUBLIC_KEY', 'AUTH_PRIVATE_KEY',
                      'SPRING_PROFILES_ACTIVE'},
     'mcp': COMMON | {'DELEGATION_PRIVATE_KEY', 'DELEGATION_PUBLIC_KEY', 'ACCESS_BASE_URL'},
 }
@@ -153,7 +154,8 @@ def prepare_launch(server, env_file=None, inherited=None, root=BE_ROOT):
         if not match:
             fail('invalid API origin', 'ACCESS_BASE_URL')
         port(match[1], 'ACCESS_BASE_URL')
-    keys = ['DEMO_PUBLIC_KEY'] + (['DELEGATION_PRIVATE_KEY', 'DELEGATION_PUBLIC_KEY'] if server == 'mcp' else [])
+    keys = ['DEMO_PUBLIC_KEY'] + (['DELEGATION_PRIVATE_KEY', 'DELEGATION_PUBLIC_KEY'] if server == 'mcp'
+                                else ['AUTH_PUBLIC_KEY', 'AUTH_PRIVATE_KEY'])
     for key in keys:
         value = settings[key]
         if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', value):

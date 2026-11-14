@@ -38,7 +38,7 @@ class LauncherCliContract(unittest.TestCase):
         shutil.copyfile(SOURCE, self.launcher)
         self.envdir = self.root / 'env fixtures'
         self.envdir.mkdir()
-        for name in ['issuer-public.pem', 'delegation-public.pem', 'delegation-private.pem']:
+        for name in ['issuer-public.pem', 'issuer-private.pem', 'delegation-public.pem', 'delegation-private.pem']:
             (self.envdir / name).write_text('TEST ONLY NON-KEY CONTENT\n')
         for module in ['api-server', 'mcp-server']:
             folder = self.root / module / 'build/libs'
@@ -62,7 +62,8 @@ class LauncherCliContract(unittest.TestCase):
         self.password = 'independent-sentinel-7c19'
         self.api = {'MYSQL_DATABASE': 'access_e2e_v2', 'MYSQL_USER': 'access_e2e',
                     'MYSQL_PASSWORD': self.password, 'DB_PORT': '3308',
-                    'DEMO_PUBLIC_KEY': 'delegation-public.pem'}
+                    'DEMO_PUBLIC_KEY': 'delegation-public.pem',
+                    'AUTH_PUBLIC_KEY': 'issuer-public.pem', 'AUTH_PRIVATE_KEY': 'issuer-private.pem'}
         self.mcp = {'DEMO_PUBLIC_KEY': 'issuer-public.pem',
                     'DELEGATION_PRIVATE_KEY': 'delegation-private.pem',
                     'DELEGATION_PUBLIC_KEY': 'delegation-public.pem'}
@@ -187,7 +188,7 @@ class LauncherCliContract(unittest.TestCase):
         for target in ['api', 'mcp']:
             self.rejected(self.envdir / 'missing.env', target)
             self.rejected(self.write_env(target), target, extra=('--spring.config.location=/untrusted',))
-            for key in (['DEMO_PUBLIC_KEY'] if target == 'api' else list(self.mcp)):
+            for key in (['DEMO_PUBLIC_KEY', 'AUTH_PUBLIC_KEY', 'AUTH_PRIVATE_KEY'] if target == 'api' else list(self.mcp)):
                 self.rejected(self.write_env(target, {key: 'missing-key.pem'}), target)
                 self.rejected(self.write_env(target, {key: 'https://untrusted.invalid/key'}), target)
         jar = self.root / 'api-server/build/libs/api-server-0.1.0.jar'
@@ -220,7 +221,8 @@ class LauncherCliContract(unittest.TestCase):
                                     digest('--demo.public-key=' + v) in obs['argv_hashes']
                                     for v in [expected.as_uri(), 'file:' + str(expected)]),
                                 'Key path did not resolve against env-file directory')
-        data = dict(self.api, DEMO_PUBLIC_KEY=str(self.envdir / 'delegation-public.pem'))
+        data = dict(self.api, DEMO_PUBLIC_KEY=str(self.envdir / 'delegation-public.pem'),
+                    AUTH_PUBLIC_KEY=str(self.envdir / 'issuer-public.pem'), AUTH_PRIVATE_KEY=str(self.envdir / 'issuer-private.pem'))
         (self.root / '.env.api').write_text('\n'.join(k + '=' + v for k, v in data.items()) + '\n')
         result = subprocess.run([sys.executable, str(self.launcher), 'api'], env=self.parent,
                                 cwd=self.base, capture_output=True, text=True, timeout=10)
@@ -257,6 +259,25 @@ class LauncherCliContract(unittest.TestCase):
             self.rejected(self.write_env(target, {forbidden_key: 'foreign-secret'}), target)
             self.rejected(self.write_env(target, {'SPRING_CONFIG_LOCATION': 'config/'}), target)
             self.rejected(self.write_env(target, {'SPRING_PROFILES_ACTIVE': 'fixture'}), target)
+
+    def test_auth_key_paths_precedence_and_server_isolation(self):
+        for key in ['AUTH_PUBLIC_KEY', 'AUTH_PRIVATE_KEY']:
+            p = self.write_env()
+            value = self.envdir / self.api[key]
+            obs = self.accepted(p)
+            self.setting(obs, key, value.as_uri())
+            alternate = self.envdir / ('alternate ' + value.name)
+            alternate.write_text('TEST ONLY NON-KEY CONTENT\n')
+            self.setting(self.accepted(p, shell={key: alternate.name}), key, alternate.as_uri())
+            self.rejected(p, shell={key: ''})
+            self.rejected(p, shell={key: '${AUTH_SENTINEL}'}, forbidden=('${AUTH_SENTINEL}',))
+            self.rejected(self.write_env('mcp', {key: str(value)}), 'mcp')
+            child = self.accepted(self.write_env('mcp'), 'mcp', {key: str(value)})
+            self.assertNotIn(key, child['env_hashes'])
+        for key in ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_TOKEN_TTL_SECONDS', 'AUTH_FIXTURE_ACCOUNTS']:
+            self.rejected(self.write_env(values={key: 'untrusted'}))
+            child = self.accepted(self.write_env(), shell={key: 'untrusted'})
+            self.assertNotIn(key, child['env_hashes'])
 
     def test_exact_upstream_url_and_ports(self):
         for value in ['http://localhost:8081', 'http://[::1]:8081', 'http://127.0.0.2:8081',

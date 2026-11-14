@@ -17,7 +17,8 @@ const isMutation = request => {
 const mutationCount = () => events.filter(event => event.mutation).length;
 try {
   const { chromium } = await import(pathToFileURL(process.env.E2E_PLAYWRIGHT_MODULE).href);
-  try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
+  try { browser = await chromium.launch({ headless: true, ...(process.env.E2E_CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.E2E_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : { channel: 'chrome' }) }); }
   catch { console.log(JSON.stringify({ status: 'BLOCKED', reason: 'Existing Chrome could not launch' })); }
   if (browser) {
     const context = await browser.newContext();
@@ -37,6 +38,8 @@ try {
     };
     const connect = async name => {
       stage = 'connect-' + name;
+      if (await page.locator('#login-dialog').isVisible()) await page.locator('#login-cancel').click();
+      if (!await page.locator('.advanced-connection').evaluate(element => element.open)) await page.locator('.advanced-connection > summary').click();
       await page.locator('#token').fill(await fixture(name));
       await page.locator('#connect').click();
       await page.waitForFunction(() => document.getElementById('connection-state').dataset.state === 'ready');

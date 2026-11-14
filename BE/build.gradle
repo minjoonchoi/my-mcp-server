@@ -11,6 +11,8 @@ subprojects {
     dependencies {
         implementation platform('org.springframework.boot:spring-boot-dependencies:3.5.16')
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
+        // Pin the launcher to Boot's JUnit BOM even for the plain Java security-support module.
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     }
     tasks.withType(JavaCompile).configureEach { options.compilerArgs += '-parameters' }
     tasks.withType(Test).configureEach { useJUnitPlatform() }

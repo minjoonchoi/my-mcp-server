@@ -3,9 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
+import { captureMcpResponses } from './mcp_response_capture.mjs';
 
 let browser;
 let page;
+let capture;
 let stage = 'launch';
 const checks = [];
 const network = [];
@@ -13,7 +15,8 @@ try {
   let chromium;
   try {
     ({ chromium } = await import(pathToFileURL(process.env.E2E_PLAYWRIGHT_MODULE).href));
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await chromium.launch({ headless: true, ...(process.env.E2E_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.E2E_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : { channel: 'chrome' }) });
   } catch {
     console.log(JSON.stringify({ status: 'BLOCKED', reason: 'Existing local Playwright/Chrome could not launch; no installation attempted' }));
     process.exitCode = 0;
@@ -22,12 +25,14 @@ try {
     const context = await browser.newContext();
     page = await context.newPage();
     page.setDefaultTimeout(15000);
+    capture = await captureMcpResponses(page);
     page.on('response', response => {
       const url = new URL(response.url());
       if (['/chat.html', '/chat.js', '/chat.css', '/mcp'].includes(url.pathname)) {
         let method;
-        try { method = response.request().postDataJSON()?.method; } catch { /* static GET */ }
-        network.push({ path: url.pathname, status: response.status(), rpcMethod: method || null });
+        let tool;
+        try { const body = response.request().postDataJSON(); method = body?.method; tool = body?.params?.name; } catch { /* static GET */ }
+        network.push({ path: url.pathname, status: response.status(), rpcMethod: method || null, tool: tool || null });
       }
     });
     stage = 'load-chat';
@@ -43,6 +48,8 @@ try {
     let connectedBefore = false;
     const connect = async name => {
       stage = 'connect-' + name;
+      if (await page.locator('#login-dialog').isVisible()) await page.locator('#login-cancel').click();
+      if (!await page.locator('.advanced-connection').evaluate(element => element.open)) await page.locator('.advanced-connection > summary').click();
       await page.locator('#token').fill(tokens[name]);
       // Filling a replacement token must synchronously discard old results.
       if (connectedBefore) assert.equal(await page.locator('#messages').innerText(), '');
@@ -60,19 +67,24 @@ try {
       });
       await page.locator('#query').fill(question);
       await page.locator('#send').click();
+      stage = 'response-' + question;
       const response = await responsePromise;
       assert.equal(response.status(), 200);
       if (expectedArgs) assert.deepEqual(response.request().postDataJSON().params.arguments, expectedArgs);
-      let raw = await response.text();
+      stage = 'decode-' + question;
+      let raw = await capture.text(response);
       if (raw.startsWith('event:') || raw.startsWith('data:')) raw = raw.split('\n').find(line => line.startsWith('data:')).slice(5).trim();
       const payload = JSON.parse(raw);
       assert.equal(payload.result.isError, false);
       const actual = payload.result.structuredContent;
+      assert.deepEqual(actual, JSON.parse(payload.result.content[0].text), 'MCP structured and textual results must agree');
       if (expectedUser) assert.equal(actual.user.id, expectedUser);
+      stage = 'render-' + question;
       await page.waitForFunction(() => !document.getElementById('send').disabled);
       const rendered = await page.locator('#messages .assistant .bubble').last().innerText();
       assert.ok(rendered.includes(expectedText), 'Expected rendered text missing: ' + expectedText);
-      checks.push({ question, tool, args: response.request().postDataJSON().params.arguments, http: 200, expectedUser: expectedUser || null, rendered: rendered.slice(0, 2000) });
+      checks.push({ question, tool, args: response.request().postDataJSON().params.arguments, http: 200, expectedUser: expectedUser || null,
+        resourceDecision: tool === 'check_my_resource_access' ? actual : undefined, rendered: rendered.slice(0, 2000) });
       return actual;
     };
     await connect('alice');
@@ -87,7 +99,9 @@ try {
       ['리소스 R999에 접근할 수 있어?', 'check_my_resource_access', '접근 허용 안 됨'],
     ]) await ask(question, tool, text, tool === 'get_my_access' ? 'alice' : undefined);
     const catalogKinds = [['사용자', 'users', ['alice']], ['역할', 'roles', ['role-analyst', 'role-editor']],
-      ['정책', 'policies', ['policy-edit', 'policy-reports', 'policy-shared']], ['리소스', 'resources', ['R100', 'R200', 'R300']]];
+      ['정책', 'policies', ['ctx-page-customers', 'ctx-page-audit', 'ctx-endpoint-customers', 'ctx-endpoint-audit',
+        'ctx-field-customers-id', 'ctx-field-customers-name', 'ctx-field-audit-id', 'ctx-field-audit-name', 'ctx-field-audit-email',
+        'policy-edit', 'policy-reports', 'policy-shared'].sort()], ['리소스', 'resources', ['R100', 'R200', 'R300']]];
     for (const [label, entity, expected] of catalogKinds) {
       const data = await ask(label + ' 목록', 'list_access_entities', expected[0], undefined, { entity });
       assert.deepEqual(data.items.map(item => item.id), expected);
@@ -107,7 +121,7 @@ try {
       const response = await promise;
       assert.equal(response.status(), 200);
       assert.deepEqual(response.request().postDataJSON().params.arguments, { entity: 'users', id });
-      let raw = await response.text();
+      let raw = await capture.text(response);
       if (raw.startsWith('event:') || raw.startsWith('data:')) raw = raw.split('\n').find(line => line.startsWith('data:')).slice(5).trim();
       const result = JSON.parse(raw).result;
       assert.equal(result.isError, true);
@@ -153,7 +167,7 @@ try {
     await page.locator('#query').fill('내 정보 알려줘');
     await page.locator('#send').click();
     const deniedResponse = await denied;
-    let deniedRaw = await deniedResponse.text();
+    let deniedRaw = await capture.text(deniedResponse);
     if (deniedRaw.startsWith('event:') || deniedRaw.startsWith('data:')) deniedRaw = deniedRaw.split('\n').find(l => l.startsWith('data:')).slice(5).trim();
     assert.equal(JSON.parse(deniedRaw).result.isError, true);
     await page.waitForFunction(() => !document.getElementById('send').disabled);
@@ -162,13 +176,16 @@ try {
     await page.locator('#disconnect').click();
     const storage = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }));
     assert.deepEqual(storage, { local: [], session: [] });
-    console.log(JSON.stringify({ status: 'PASS', browser: 'Chrome', transport: 'real same-origin MCP', checks, network }));
+    console.log(JSON.stringify({ status: 'PASS', browser: 'Chrome', transport: 'real same-origin MCP',
+      responseObservation: 'Passive CDP Network.streamResourceContent; original request IDs and bytes', checks, network }));
   }
 } catch (error) {
   // Never print Playwright call logs: a fill call can contain a credential.
   let state;
   try { state = await page.locator('#connection-note').innerText({ timeout: 1000 }); } catch { state = 'Unavailable'; }
-  console.log(JSON.stringify({ status: 'FAIL', stage, state, network, completedChecks: checks, reason: error.code === 'ERR_ASSERTION' ? String(error.message).replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[REDACTED JWT]') : 'Browser action failed or timed out', errorType: error.name }));
+  const firstLine = String(error.message).split('\n')[0].replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[REDACTED JWT]').slice(0, 300);
+  console.log(JSON.stringify({ status: 'FAIL', stage, state, network, completedChecks: checks, reason: firstLine, errorType: error.name }));
 } finally {
+  if (capture) await capture.dispose();
   if (browser) await browser.close();
 }

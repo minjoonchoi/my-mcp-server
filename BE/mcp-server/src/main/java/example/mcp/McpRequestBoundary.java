@@ -24,7 +24,7 @@ public class McpRequestBoundary extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // Security already restricts accessible endpoints. Raw URI spelling must not
         // bypass this boundary when Spring MVC decodes ordinary percent-encoded letters.
-        return !"POST".equals(request.getMethod());
+        return !"POST".equals(request.getMethod()) || example.security.LoginProtocol.isLoginPath(request, false);
     }
 
     @Override

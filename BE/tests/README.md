@@ -84,6 +84,8 @@ JSON은 메타데이터와 등록 handler만 지정합니다. shell/eval DSL은 
 
 ## Env launcher 독립 검증
 
+현재 로그인/context 병합판은 아래 **v3 실행**을 사용합니다. 이전 `launcher_runtime.py`는 V1–V4·12 Tool 시점의 재현용이며 병합판 통과 근거가 아닙니다. 독립 CLI 테스트는 현재 API의 `AUTH_PUBLIC_KEY`·`AUTH_PRIVATE_KEY` 필수값/경로/우선순위/placeholder와 API↔MCP 비밀 분리까지 검증합니다.
+
 `BE/`에서 `PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/test_env_launcher.py`를 실행하면 독립 public CLI 계약을 검사합니다. 임시 복제 디렉터리의 가짜 Java는 인수·환경값의 SHA-256만 기록합니다. 실제 JVM·포트·Docker는 사용하지 않으며 이 결과를 MySQL/E2E 통과로 취급하지 않습니다. 문법, 무실행 literal, 파일 전체와 선택 shell의 placeholder 거부, 우선순위/빈 값, 경로 기준, 서버별 최소 환경, packaged config 고정과 잘못된 입력의 실행 전 거부를 검증합니다. 제품 launcher 단위검사와 별개의 테스트입니다.
 
 실제 실행은 MANAGER TEST_READY 이후에만 다음 명령으로 수행합니다. `--authorization`에는 해당 인계 메시지 ID, `--handoff`에는 승인된 launcher/API/MCP 파일의 SHA-256 맵을 넣습니다. 경로와 옵션 외 자격증명 값을 명령행에 넣지 않습니다.
@@ -101,3 +103,20 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/launcher_runtime.py \
 실제 launcher 두 JVM의 MCP 초기화→12 Tools→Alice/Bob/Carol 권한 결과와 직접 API 일치, 인증거부, API 종료 후 MCP의 안전한 upstream 오류, 잘못된 DB의 startup 실패, SIGINT 종료·원본 불변·DB history/count 보존·argv/log 비밀 부재를 검사합니다. 실CLI 음성검사의 Java 관측 wrapper는 호출되면 실제 Java를 실행하며, placeholder/누락/잘못된 입력이 그 지점에 도달하지 않았음을 확인합니다. 사용자 volume은 보존하고 본 테스트가 시작한 process group만 정리합니다.
 
 각 실행은 `BE/test-results/launcher-cli-*` 또는 `launcher-runtime-*` 아래 새 `report.json`과 `summary.md`를 남깁니다. 실패·미실행은 통과와 분리하며, 재실행은 `--previous-run`으로 연결합니다. 기존 core38/UI9 결과는 launcher 검증 근거가 아닙니다. 실제 사용 Python 버전을 기록하며 설치하지 않은 최소 버전의 실행을 주장하지 않습니다.
+
+### 로그인/context 병합판 v3 실행
+
+MANAGER가 정확한 새 launcher/API/MCP 해시와 TEST_READY를 전달한 뒤 TESTER 독점 runtime에서 실행합니다. 기존 데이터베이스를 마이그레이션하지 않습니다.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tests/e2e/launcher_v3_runtime.py \
+  --handoff /tmp/my-mcp-env-launcher-v3-handoff.json \
+  --authorization <TEST_READY-message-id> \
+  --previous-run <previous-run-id>
+```
+
+이 배정의 전용 project는 `mcp-access-env-v3`, DB/app user는 `access_env_v3`, port는 `3309`, volume은 `mcp-access-env-v3_access-data`입니다. 첫 실행은 포트·project·volume이 비어 있는지 확인하고 task 소유권 기록과 비공개 5키 env를 `BE/.dev/env-v3-task_6e2418395f8e/`에 생성합니다. 기존 위치를 덮어쓰지 않으며, 같은 task 재검증은 이 기록과 자체 생성 자격증명을 재사용합니다. 다른 task는 새 MANAGER 배정과 별도 격리 범위를 먼저 정해야 합니다.
+
+새 API가 Flyway V1–V7을 적용한 후에만 생성기의 hash-only `login-accounts.sql`을 앱 계정의 stdin으로 한 번 삽입합니다. 중복 삽입은 실패하고 기존 계정 해시를 바꾸지 않아야 합니다. 직접 API 로그인과 MCP same-origin relay 로그인, 두 정상 direct/delegated 신뢰 경로, named 16 Tools, 14개 도메인 테이블, page/endpoint/field 허용·거부 및 관리권한 회귀를 검증합니다. 들어온 `verify_auth.py`와 `verify_context_access.py`의 관련 테스트를 실제 launcher 두 JVM에 연결해 실행하므로 새 성공 응답을 흉내 내지 않습니다.
+
+실제 Chrome 로그인→질문→로그아웃→다른 사용자와 AUTH 키 누락/불일치, 재기동 history/account 보존, 기존 3307/3308의 읽기 전용 schema/count/volume 보존 확인도 포함됩니다. 계정 비밀번호·토큰·private key·password hash는 결과에 저장하지 않습니다. 새 DB의 감사 기록과 volume·task 자격증명은 재검증을 위해 보존하고, 자신이 시작한 JVM과 브라우저만 종료합니다. 기존 fixture 검증과 FE Node 검사는 별도 실행·보고하며 실제 MySQL/browser 결과로 합산하지 않습니다.

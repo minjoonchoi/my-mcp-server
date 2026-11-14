@@ -16,13 +16,17 @@
       <section class="connection">
         <div class="section-title"><h2>서버 연결</h2><span id="connection-state" class="status" role="status">연결 안 됨</span></div>
         <div class="endpoint"><span>같은 서버</span><code>/mcp</code></div>
-        <form id="connect-form" autocomplete="off">
+        <div class="connection-actions"><button id="login-open" type="button" class="primary">로그인하기 <span aria-hidden="true">↗</span></button><button id="disconnect" type="button" class="secondary" disabled>로그아웃</button></div>
+        <p id="connection-note" class="connection-note" role="status">로그인하면 내 권한을 조회할 수 있습니다.</p>
+        <details class="advanced-connection">
+          <summary>개발자용 토큰 연결</summary>
+          <form id="connect-form" autocomplete="off">
           <label for="token">개발용 MCP 토큰</label>
           <input id="token" type="password" placeholder="토큰을 붙여 넣으세요" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="token-help" maxlength="8192">
-          <p id="token-help" class="hint">이 탭의 메모리에서만 사용합니다.<br>연결 해제 시 토큰을 지웁니다.</p>
-          <div class="connection-actions"><button id="connect" type="submit" class="primary">연결하기 <span aria-hidden="true">↗</span></button><button id="disconnect" type="button" class="secondary" disabled>연결 해제</button></div>
-        </form>
-        <p id="connection-note" class="connection-note" role="status">MCP 토큰을 입력한 뒤 연결하세요.</p>
+          <p id="token-help" class="hint">이 탭의 메모리에서만 사용합니다.<br>로그아웃 시 토큰을 지웁니다.</p>
+          <div class="connection-actions"><button id="connect" type="submit" class="secondary">토큰으로 연결</button></div>
+          </form>
+        </details>
       </section>
       <div class="scope-note"><span aria-hidden="true">◎</span><p>조회 범위와 관리 권한은 서버가 결정합니다.<br>변경은 미리보기 후 실행할 때만 요청합니다.</p></div>
       <div class="sidebar-footer"><span class="dot"></span> LOCAL MCP · STREAMABLE HTTP</div>
@@ -40,7 +44,7 @@
           <article class="capability-card"><h3>권한 개념 이해</h3><p>역할과 정책의 차이를 알아봐요. 실제 부여 권한과 별개의 설명이에요.</p><p class="capability-example">“역할과 정책은 어떻게 달라?”</p><p class="capability-limit">추가 입력 없음 · 조회 권한 필요</p><button id="discover-concept" type="button" class="secondary">개념 설명 보기</button></article>
         </div>
       </details>
-      <p id="discovery-status" class="discovery-status" role="status" tabindex="-1">먼저 기능을 살펴보세요. 조회하려면 MCP 토큰으로 연결하세요.</p>
+      <p id="discovery-status" class="discovery-status" role="status" tabindex="-1">기능을 살펴보거나 질문을 입력하세요. 권한 조회는 로그인 후 사용할 수 있습니다.</p>
       <section id="catalog-browser" class="catalog-browser" aria-labelledby="browse-title" hidden>
         <h3 id="browse-title">허용된 목록에서 상세 찾기</h3>
         <p id="browse-status" class="management-help" role="status"></p>
@@ -74,7 +78,7 @@
       </details>
       </div>
       <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="대화 내역" tabindex="-1">
-        <article class="message assistant"><span class="avatar" aria-hidden="true">▦</span><div><span class="message-author">권한 도우미</span><div class="bubble"><p>나는 어디에, 왜 접근할 수 있을까요?</p><p class="muted">먼저 MCP 토큰으로 연결한 뒤, <strong>내 역할은 뭐야?</strong>라고 물어보세요. 서버가 확인한 역할·정책·리소스와 실제 권한 경로를 알려드려요.</p></div></div></article>
+        <article class="message assistant"><span class="avatar" aria-hidden="true">▦</span><div><span class="message-author">권한 도우미</span><div class="bubble"><p>나는 어디에, 왜 접근할 수 있을까요?</p><p class="muted"><strong>내 역할은 뭐야?</strong>라고 물어보세요. 로그인이 필요하면 로그인 창으로 안내합니다. 로그인 후 서버가 확인한 역할·정책·리소스와 실제 권한 경로를 알려드려요.</p></div></div></article>
       </div>
       <div class="composer-area">
         <div class="examples" aria-label="예시 질문"><span>이렇게 물어보세요</span>
@@ -87,10 +91,23 @@
           <button type="button" data-query="역할 목록">역할 목록</button>
           <button type="button" data-query="요청 가능한 역할 알려줘">요청 가능한 역할</button>
         </div>
-        <form id="query-form" class="composer"><label class="sr-only" for="query">내 권한 질문</label><input id="query" placeholder="연결 후 내 권한을 질문하세요" autocomplete="off" maxlength="300" disabled><button id="send" type="submit" class="primary" disabled>전송 <span aria-hidden="true">↑</span></button><button id="cancel" type="button" class="secondary" hidden>취소</button></form>
+        <form id="query-form" class="composer"><label class="sr-only" for="query">내 권한 질문</label><input id="query" placeholder="질문을 입력하면 로그인으로 안내합니다" autocomplete="off" maxlength="300"><button id="send" type="submit" class="primary">전송 <span aria-hidden="true">↑</span></button><button id="cancel" type="button" class="secondary" hidden>취소</button></form>
         <div class="composer-footer"><span id="activity" role="status">연결을 기다리고 있습니다.</span><span>권한 조회·관계 관리 · 일반 AI 채팅 아님</span></div>
       </div>
     </section>
   </main>
+  <dialog id="login-dialog" class="login-dialog" aria-labelledby="login-title" aria-describedby="login-help">
+    <p class="eyebrow">ACCESS WORKSPACE</p>
+    <h2 id="login-title">내 계정으로 로그인</h2>
+    <p id="login-help">서버에 등록된 계정으로 로그인하세요. 권한 조회는 로그인한 사용자 기준으로 처리합니다.</p>
+    <form id="login-form" autocomplete="off">
+      <label for="login-username">사용자 이름</label>
+      <input id="login-username" name="username" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" pattern="[A-Za-z0-9_-]{1,64}" required>
+      <label for="login-password">비밀번호</label>
+      <input id="login-password" name="password" type="password" autocomplete="off" maxlength="256" required>
+      <p id="login-status" class="login-status" role="status" aria-live="polite">로그인 후 작성 중인 질문을 보낼 수 있습니다.</p>
+      <div class="login-actions"><button id="login-submit" type="submit" class="primary">로그인</button><button id="login-cancel" type="button" class="secondary">취소</button></div>
+    </form>
+  </dialog>
 </body>
 </html>
